@@ -105,7 +105,15 @@ class TTaskScheduler {
 
    public:
     template <typename F, typename... Args>
-    TTask add(F&& f, Args&&... args);
+    TTask Add(F&& f, Args&&... args) {
+        using NodeT =
+            Node<std::remove_cvref_t<F>, std::remove_cvref_t<Args>...>;
+        auto node = std::make_shared<NodeT>(std::forward<F>(f),
+                                            std::forward<Args>(args)...);
+
+        tasks_.push_back(node);
+        return TTask(node, this);
+    }
 
     void ExecuteAll() {
         for (auto& task : tasks_) {
