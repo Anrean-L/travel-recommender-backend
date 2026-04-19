@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <exception>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -13,6 +14,13 @@ template <typename F, typename... Args>
 using InvokeResult = std::invoke_result_t<F&, Args&...>;
 template <typename F, typename... Args>
 using StoredResult = std::remove_cvref_t<InvokeResult<F, Args...>>;
+
+class BadTaskType : public std::exception {
+   public:
+    const char* what() const noexcept override {
+        return "error: bad task result type";
+    }
+};
 
 class INode {
    public:
@@ -58,7 +66,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     std::unique_ptr<StoredResultT> result_{};
     bool executed_ = false;
 
-    template <size_t... Is>
+    template <std::size_t... Is>
     ResultT Call(std::index_sequence<Is...>) {
         return func_(std::get<Is>(args_)...);
     }
@@ -68,10 +76,27 @@ class TTaskScheduler;
 
 class TTask {
    public:
-    explicit TTask(std::shared_ptr<INode> node) : node_(node) {}
+    TTask(std::shared_ptr<INode> node, TTaskScheduler* scheduler)
+        : node_(std::move(node)), scheduler_(scheduler) {}
+
+    template <typename T>
+    T GetResultSync() {
+        static_assert(!std::is_rvalue_reference_v<T>);
+        static_assert(!std::is_lvalue_reference_v<T> ||
+                      std::is_const_v<std::remove_reference_t<T>>);
+
+        using StoredT = std::remove_cvref_t<T>;
+        node_->Execute();
+        auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
+        if (typed_node == nullptr) {
+            throw BadTaskType{};
+        }
+        return static_cast<T>(typed_node->GetResultRef());
+    }
 
    private:
     std::shared_ptr<INode> node_;
+    TTaskScheduler* scheduler_;
 };
 
 class TTaskScheduler {
