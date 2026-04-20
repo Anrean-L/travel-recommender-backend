@@ -25,8 +25,8 @@ class BadTaskType : public std::exception {
 class INode {
    public:
     virtual void Execute() = 0;
-    virtual ~INode() = default;
-    virtual bool IsExecuted() const = 0;
+    virtual ~INode() noexcept = default;
+    virtual bool IsExecuted() const noexcept = 0;
 };
 
 template <typename R>
@@ -54,7 +54,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
             Call(std::index_sequence_for<Args...>{}));
         executed_ = true;
     }
-    bool IsExecuted() const override { return executed_; }
+    bool IsExecuted() const noexcept override { return executed_; }
 
     StoredResultT& GetResultRef() override { return *result_; }
 
@@ -70,6 +70,33 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     ResultT Call(std::index_sequence<Is...>) {
         return func_(std::get<Is>(args_)...);
     }
+};
+
+template <typename T>
+class TFuture {
+   public:
+    explicit TFuture(std::shared_ptr<INode> node) : node_(std::move(node)) {}
+
+    T Get() {
+        static_assert(!std::is_rvalue_reference_v<T>);
+        static_assert(!std::is_lvalue_reference_v<T> ||
+                      std::is_const_v<std::remove_reference_t<T>>);
+
+        using StoredT = std::remove_cvref_t<T>;
+        node_->Execute();
+        auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
+        if (typed_node == nullptr) {
+            throw BadTaskType{};
+        }
+        if constexpr (std::is_lvalue_reference_v<T>) {
+            return typed_node->GetResultRef();
+        } else {
+            return typed_node->MoveResult();
+        }
+    }
+
+   private:
+    std::shared_ptr<INode> node_;
 };
 
 class TTaskScheduler;
@@ -92,6 +119,11 @@ class TTask {
             throw BadTaskType{};
         }
         return static_cast<T>(typed_node->GetResultRef());
+    }
+
+    template <typename T>
+    TFuture<T> GetFutureResult() {
+        return TFuture<T>(node_);
     }
 
    private:
