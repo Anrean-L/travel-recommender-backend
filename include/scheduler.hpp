@@ -15,6 +15,13 @@ using InvokeResult = std::invoke_result_t<F&, Args&...>;
 template <typename F, typename... Args>
 using StoredResult = std::remove_cvref_t<InvokeResult<F, Args...>>;
 
+class AccessAfterMove : public std::exception {
+   public:
+    const char* what() const noexcept override {
+        return "error: access after move";
+    }
+};
+
 class BadTaskType : public std::exception {
    public:
     const char* what() const noexcept override {
@@ -50,21 +57,36 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
         if (executed_) {
             return;
         }
+        if (expired_) {
+            throw AccessAfterMove{};
+        }
         result_ = std::make_unique<StoredResultT>(
             Call(std::index_sequence_for<Args...>{}));
         executed_ = true;
     }
     bool IsExecuted() const noexcept override { return executed_; }
 
-    StoredResultT& GetResultRef() override { return *result_; }
+    StoredResultT& GetResultRef() override {
+        if (expired_) {
+            throw AccessAfterMove{};
+        }
+        return *result_;
+    }
 
-    StoredResultT&& MoveResult() override { return std::move(*result_); }
+    StoredResultT&& MoveResult() override {
+        if (expired_) {
+            throw AccessAfterMove{};
+        }
+        expired_ = true;
+        return std::move(*result_);
+    }
 
    private:
     StoredF func_;
     StoredArgs args_;
     std::unique_ptr<StoredResultT> result_{};
     bool executed_ = false;
+    bool expired_ = false;
 
     template <std::size_t... Is>
     ResultT Call(std::index_sequence<Is...>) {
