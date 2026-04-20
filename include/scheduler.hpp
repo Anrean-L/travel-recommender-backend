@@ -10,8 +10,31 @@
 
 namespace scheduler {
 
+template <typename T>
+class TFuture;
+
+template <typename Arg>
+struct ArgTraits {
+    using Type = Arg&;
+
+    static Type Resolve(Arg& arg) { return arg; }
+};
+
+template <typename T>
+struct ArgTraits<TFuture<T>> {
+    using Type = T;
+
+    static Type Resolve(TFuture<T>& future) { return future.Get(); }
+};
+
+template <typename Arg>
+decltype(auto) Resolve(Arg& arg) {
+    return ArgTraits<Arg>::Resolve(arg);
+}
+
 template <typename F, typename... Args>
-using InvokeResult = std::invoke_result_t<F&, Args&...>;
+using InvokeResult =
+    std::invoke_result_t<F&, typename ArgTraits<Args>::Type...>;
 template <typename F, typename... Args>
 using StoredResult = std::remove_cvref_t<InvokeResult<F, Args...>>;
 
@@ -90,7 +113,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
 
     template <std::size_t... Is>
     ResultT Call(std::index_sequence<Is...>) {
-        return func_(std::get<Is>(args_)...);
+        return func_(Resolve(std::get<Is>(args_))...);
     }
 };
 
