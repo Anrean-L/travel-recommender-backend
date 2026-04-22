@@ -38,6 +38,29 @@ using InvokeResult =
 template <typename F, typename... Args>
 using StoredResult = std::remove_cvref_t<InvokeResult<F, Args...>>;
 
+template <typename F>
+struct FunctionTraits;
+
+template <typename R, typename Arg>
+struct FunctionTraits<R (*)(Arg)> {
+    using ArgType = Arg;
+};
+
+template <typename R, typename C, typename Arg>
+struct FunctionTraits<R (C::*)(Arg) const> {
+    using ArgType = Arg;
+};
+
+template <typename F>
+struct FunctionTraits {
+    using ArgType = typename FunctionTraits<decltype(&F::operator())>::ArgType;
+};
+
+template <typename R, typename C, typename Arg>
+struct FunctionTraits<R (C::*)(Arg)> {
+    using ArgType = Arg;
+};
+
 class AccessAfterMove : public std::exception {
    public:
     const char* what() const noexcept override {
