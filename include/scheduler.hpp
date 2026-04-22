@@ -36,7 +36,7 @@ template <typename F, typename... Args>
 using InvokeResult =
     std::invoke_result_t<F&, typename ArgTraits<Args>::Type...>;
 template <typename F, typename... Args>
-using StoredResult = std::remove_cvref_t<InvokeResult<F, Args...>>;
+using StoredResult = std::decay_t<InvokeResult<F, Args...>>;
 
 template <typename F>
 struct FunctionTraits;
@@ -107,7 +107,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
    private:
     using ResultT = InvokeResult<F, Args...>;
     using StoredResultT = StoredResult<F, Args...>;
-    using StoredF = std::remove_cvref_t<F>;
+    using StoredF = std::decay_t<F>;
     using StoredArgs = std::tuple<std::decay_t<Args>...>;
 
    public:
@@ -182,7 +182,7 @@ class TFuture {
         static_assert(!std::is_lvalue_reference_v<T> ||
                       std::is_const_v<std::remove_reference_t<T>>);
 
-        using StoredT = std::remove_cvref_t<T>;
+        using StoredT = std::decay_t<T>;
         node_->Execute();
         auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
         if (typed_node == nullptr) {
@@ -212,7 +212,7 @@ class TTask {
         static_assert(!std::is_lvalue_reference_v<T> ||
                       std::is_const_v<std::remove_reference_t<T>>);
 
-        using StoredT = std::remove_cvref_t<T>;
+        using StoredT = std::decay_t<T>;
         node_->Execute();
         auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
         if (typed_node == nullptr) {
@@ -244,8 +244,7 @@ class TTaskScheduler {
    public:
     template <typename F, typename... Args>
     TTask Add(F&& f, Args&&... args) {
-        using NodeT =
-            Node<std::remove_cvref_t<F>, std::remove_cvref_t<Args>...>;
+        using NodeT = Node<std::decay_t<F>, std::decay_t<Args>...>;
         auto node = std::make_shared<NodeT>(std::forward<F>(f),
                                             std::forward<Args>(args)...);
 
@@ -262,13 +261,13 @@ class TTaskScheduler {
 
 template <typename F>
 TTask TTask::Apply(F&& f) {
-    using Arg = typename FunctionTraits<std::remove_cvref_t<F>>::ArgType;
+    using Arg = typename FunctionTraits<std::decay_t<F>>::ArgType;
     return scheduler_->Add(std::forward<F>(f), GetFutureResult<Arg>());
 }
 
 template <typename Method, typename Obj>
 TTask TTask::Apply(Method&& method, Obj&& obj) {
-    using Arg = typename FunctionTraits<std::remove_cvref_t<Method>>::ArgType;
+    using Arg = typename FunctionTraits<std::decay_t<Method>>::ArgType;
     return scheduler_->Add(std::forward<Method>(method), std::forward<Obj>(obj),
                            GetFutureResult<Arg>());
 }
