@@ -106,8 +106,13 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
         if (expired_) {
             throw AccessAfterMove{};
         }
-        result_ = std::make_unique<StoredResultT>(
-            Call(std::index_sequence_for<Args...>{}));
+        if constexpr (std::is_member_function_pointer_v<StoredF>) {
+            result_ = std::make_unique<StoredResultT>(
+                CallMethod(std::make_index_sequence<sizeof...(Args) - 1>{}));
+        } else {
+            result_ = std::make_unique<StoredResultT>(
+                CallRegular(std::index_sequence_for<Args...>{}));
+        }
         executed_ = true;
     }
     bool IsExecuted() const noexcept override { return executed_; }
@@ -135,7 +140,18 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     bool expired_ = false;
 
     template <std::size_t... Is>
-    ResultT Call(std::index_sequence<Is...>) {
+    ResultT CallMethod(std::index_sequence<Is...>) {
+        auto&& obj = Resolve(std::get<0>(args_));
+        if constexpr (std::is_pointer_v<
+                          std::remove_reference_t<decltype(obj)>>) {
+            return ((*obj).*func_)(Resolve(std::get<Is + 1>(args_))...);
+        } else {
+            return (obj.*func_)(Resolve(std::get<Is + 1>(args_))...);
+        }
+    }
+
+    template <std::size_t... Is>
+    ResultT CallRegular(std::index_sequence<Is...>) {
         return func_(Resolve(std::get<Is>(args_))...);
     }
 };
