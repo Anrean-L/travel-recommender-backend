@@ -189,6 +189,12 @@ class TTask {
         return static_cast<T>(typed_node->GetResultRef());
     }
 
+    template <typename F>
+    TTask Apply(F&& f);
+
+    template <typename Method, typename Obj>
+    TTask Apply(Method&& f, Obj&& obj);
+
     template <typename T>
     TFuture<T> GetFutureResult() {
         return TFuture<T>(node_);
@@ -221,5 +227,18 @@ class TTaskScheduler {
         }
     }
 };
+
+template <typename F>
+TTask TTask::Apply(F&& f) {
+    using Arg = typename FunctionTraits<std::remove_cvref_t<F>>::ArgType;
+    return scheduler_->Add(std::forward<F>(f), GetFutureResult<Arg>());
+}
+
+template <typename Method, typename Obj>
+TTask TTask::Apply(Method&& method, Obj&& obj) {
+    using Arg = typename FunctionTraits<std::remove_cvref_t<Method>>::ArgType;
+    return scheduler_->Add(std::forward<Method>(method), std::forward<Obj>(obj),
+                           GetFutureResult<Arg>());
+}
 
 }  // namespace scheduler
