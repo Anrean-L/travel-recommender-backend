@@ -75,11 +75,24 @@ class BadTaskType : public std::exception {
     }
 };
 
+class CycleDetected : public std::exception {
+   public:
+    const char* what() const noexcept override {
+        return "error: cycle detected";
+    }
+};
+
 class INode {
    public:
     virtual void Execute() = 0;
     virtual ~INode() noexcept = default;
-    virtual bool IsExecuted() const noexcept = 0;
+
+   protected:
+    enum class State {
+        kNotStarted,
+        kExecuting,
+        kExecuted,
+    };
 };
 
 template <typename R>
@@ -100,9 +113,13 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
    public:
     Node(F f, Args... args) : func_(std::move(f)), args_(std::move(args)...) {}
     void Execute() override {
-        if (executed_) {
+        if (state_ == INode::State::kExecuting) {
+            throw CycleDetected{};
+        }
+        if (state_ == INode::State::kExecuted) {
             return;
         }
+        state_ = INode::State::kExecuting;
         if (expired_) {
             throw AccessAfterMove{};
         }
@@ -113,9 +130,8 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
             result_ = std::make_unique<StoredResultT>(
                 CallRegular(std::index_sequence_for<Args...>{}));
         }
-        executed_ = true;
+        state_ = INode::State::kExecuted;
     }
-    bool IsExecuted() const noexcept override { return executed_; }
 
     StoredResultT& GetResultRef() override {
         if (expired_) {
@@ -136,7 +152,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     StoredF func_;
     StoredArgs args_;
     std::unique_ptr<StoredResultT> result_{};
-    bool executed_ = false;
+    INode::State state_ = INode::State::kNotStarted;
     bool expired_ = false;
 
     template <std::size_t... Is>
