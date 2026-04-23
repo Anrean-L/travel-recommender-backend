@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -13,6 +14,8 @@ namespace {
 int AddInts(int lhs, int rhs) { return lhs + rhs; }
 
 int Increment(int value) { return value + 1; }
+
+int SumThree(int lhs, int rhs, int extra) { return lhs + rhs + extra; }
 
 struct Multiplier {
     int factor = 1;
@@ -40,20 +43,33 @@ TEST(SchedulerTraits, ResolveReturnsPlainArgumentByReference) {
 }
 
 TEST(SchedulerTraits, FunctionTraitsDetectCallableArgumentTypes) {
-    auto lambda = [](const int& value) { return value; };
+    auto lambda = [](const int& value, int multiplier) {
+        return value * multiplier;
+    };
 
-    static_assert(
-        std::is_same_v<scheduler::FunctionTraits<decltype(&Increment)>::ArgType,
-                       int>);
-    static_assert(
-        std::is_same_v<scheduler::FunctionTraits<Identity>::ArgType, int>);
-    static_assert(
-        std::is_same_v<scheduler::FunctionTraits<decltype(lambda)>::ArgType,
-                       const int&>);
+    static_assert(scheduler::FunctionTraits<decltype(&Increment)>::kArity == 1);
     static_assert(
         std::is_same_v<
-            scheduler::FunctionTraits<decltype(&Multiplier::Multiply)>::ArgType,
+            scheduler::FunctionTraits<decltype(&Increment)>::template Arg<0>,
             int>);
+    static_assert(scheduler::FunctionTraits<Identity>::kArity == 1);
+    static_assert(
+        std::is_same_v<scheduler::FunctionTraits<Identity>::template Arg<0>,
+                       int>);
+    static_assert(scheduler::FunctionTraits<decltype(lambda)>::kArity == 2);
+    static_assert(std::is_same_v<
+                  scheduler::FunctionTraits<decltype(lambda)>::template Arg<0>,
+                  const int&>);
+    static_assert(
+        std::is_same_v<
+            scheduler::FunctionTraits<decltype(lambda)>::template Arg<1>, int>);
+    static_assert(
+        scheduler::FunctionTraits<decltype(&Multiplier::Multiply)>::kArity ==
+        1);
+    static_assert(
+        std::is_same_v<scheduler::FunctionTraits<
+                           decltype(&Multiplier::Multiply)>::template Arg<0>,
+                       int>);
 }
 
 TEST(SchedulerExceptions, WhatMessagesAreStable) {
@@ -196,6 +212,25 @@ TEST(Task, ApplyCreatesDependentTaskFromLambda) {
     auto next = task.Apply([](int value) { return value * 2; });
 
     EXPECT_EQ(next.GetResultSync<int>(), 42);
+}
+
+TEST(Task, ApplyCreatesDependentTaskFromMultiArgumentFunction) {
+    scheduler::TTaskScheduler scheduler;
+    auto task = scheduler.Add([] { return std::make_tuple(20, 21, 1); });
+    auto next = task.Apply(SumThree);
+
+    EXPECT_EQ(next.GetResultSync<int>(), 42);
+}
+
+TEST(Task, ApplyCreatesDependentTaskFromMultiArgumentLambda) {
+    scheduler::TTaskScheduler scheduler;
+    auto task =
+        scheduler.Add([] { return std::make_tuple(std::string{"ab"}, 21); });
+    auto next = task.Apply([](const std::string& prefix, int count) {
+        return prefix.size() * count;
+    });
+
+    EXPECT_EQ(next.GetResultSync<std::size_t>(), 42U);
 }
 
 TEST(Task, ApplyCreatesDependentTaskFromConstMemberFunction) {

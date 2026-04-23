@@ -41,26 +41,63 @@ using StoredResult = std::decay_t<InvokeResult<F, Args...>>;
 template <typename F>
 struct FunctionTraits;
 
-template <typename R, typename Arg>
-struct FunctionTraits<R (*)(Arg)> {
-    using ArgType = Arg;
+template <typename R, typename... Args>
+struct FunctionTraits<R (*)(Args...)> {
+    using ArgsTuple = std::tuple<Args...>;
+    static constexpr std::size_t kArity = sizeof...(Args);
+
+    template <std::size_t I>
+    using Arg = std::tuple_element_t<I, ArgsTuple>;
 };
 
-template <typename R, typename C, typename Arg>
-struct FunctionTraits<R (C::*)(Arg) const> {
-    using ArgType = Arg;
+template <typename R, typename C, typename... Args>
+struct FunctionTraits<R (C::*)(Args...) const> {
+    using ArgsTuple = std::tuple<Args...>;
+    static constexpr std::size_t kArity = sizeof...(Args);
+
+    template <std::size_t I>
+    using Arg = std::tuple_element_t<I, ArgsTuple>;
+};
+
+template <typename R, typename C, typename... Args>
+struct FunctionTraits<R (C::*)(Args...)> {
+    using ArgsTuple = std::tuple<Args...>;
+    static constexpr std::size_t kArity = sizeof...(Args);
+
+    template <std::size_t I>
+    using Arg = std::tuple_element_t<I, ArgsTuple>;
 };
 
 template <typename F>
 struct FunctionTraits {
-    using ArgType = typename FunctionTraits<decltype(&F::operator())>::ArgType;
+    using Base = FunctionTraits<decltype(&F::operator())>;
+    using ArgsTuple = typename Base::ArgsTuple;
+    static constexpr std::size_t kArity = Base::kArity;
+
+    template <std::size_t I>
+    using Arg = typename Base::template Arg<I>;
 };
 
-template <typename R, typename C, typename Arg>
-struct FunctionTraits<R (C::*)(Arg)> {
-    using ArgType = Arg;
+template <typename Tuple>
+struct DecayTuple;
+
+template <typename... Ts>
+struct DecayTuple<std::tuple<Ts...>> {
+    using Type = std::tuple<std::decay_t<Ts>...>;
 };
 
+template <typename F, typename Tuple, std::size_t... Is>
+decltype(auto) CallFromTupleImpl(F&& f, Tuple&& tuple,
+                                 std::index_sequence<Is...>) {
+    return std::forward<F>(f)(std::get<Is>(std::forward<Tuple>(tuple))...);
+}
+
+template <typename F, typename Tuple>
+decltype(auto) CallFromTuple(F&& f, Tuple&& tuple) {
+    constexpr size_t N = std::tuple_size_v<std::remove_reference_t<Tuple>>;
+    return CallFromTupleImpl(std::forward<F>(f), std::forward<Tuple>(tuple),
+                             std::make_index_sequence<N>{});
+}
 class AccessAfterMove : public std::exception {
    public:
     const char* what() const noexcept override {
@@ -261,13 +298,25 @@ class TTaskScheduler {
 
 template <typename F>
 TTask TTask::Apply(F&& f) {
-    using Arg = typename FunctionTraits<std::decay_t<F>>::ArgType;
-    return scheduler_->Add(std::forward<F>(f), GetFutureResult<Arg>());
+    using Traits = FunctionTraits<std::decay_t<F>>;
+    if constexpr (Traits::kArity == 1) {
+        using Arg = typename Traits::template Arg<0>;
+        return scheduler_->Add(std::forward<F>(f), GetFutureResult<Arg>());
+    } else {
+        using ArgsTuple = typename Traits::ArgsTuple;
+        using SourceTuple = typename DecayTuple<ArgsTuple>::Type;
+
+        auto wrapper = [func = std::forward<F>(f)](SourceTuple tuple) mutable {
+            return CallFromTuple(func, std::move(tuple));
+        };
+        return scheduler_->Add(std::move(wrapper),
+                               GetFutureResult<SourceTuple>());
+    }
 }
 
 template <typename Method, typename Obj>
 TTask TTask::Apply(Method&& method, Obj&& obj) {
-    using Arg = typename FunctionTraits<std::decay_t<Method>>::ArgType;
+    using Arg = typename FunctionTraits<std::decay_t<Method>>::template Arg<0>;
     return scheduler_->Add(std::forward<Method>(method), std::forward<Obj>(obj),
                            GetFutureResult<Arg>());
 }
