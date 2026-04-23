@@ -160,14 +160,19 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
         if (expired_) {
             throw AccessAfterMove{};
         }
-        if constexpr (std::is_member_function_pointer_v<StoredF>) {
-            result_ = std::make_unique<StoredResultT>(
-                CallMethod(std::make_index_sequence<sizeof...(Args) - 1>{}));
-        } else {
-            result_ = std::make_unique<StoredResultT>(
-                CallRegular(std::index_sequence_for<Args...>{}));
+        try {
+            if constexpr (std::is_member_function_pointer_v<StoredF>) {
+                result_ = std::make_unique<StoredResultT>(CallMethod(
+                    std::make_index_sequence<sizeof...(Args) - 1>{}));
+            } else {
+                result_ = std::make_unique<StoredResultT>(
+                    CallRegular(std::index_sequence_for<Args...>{}));
+            }
+            state_ = INode::State::kExecuted;
+        } catch (...) {
+            state_ = INode::State::kNotStarted;
+            throw;
         }
-        state_ = INode::State::kExecuted;
     }
 
     StoredResultT& GetResultRef() override {
