@@ -46,3 +46,6 @@ CMakePresets.json
 
 # development
 .clangd
+
+# environment
+.env
