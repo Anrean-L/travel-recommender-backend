@@ -23,6 +23,9 @@ class IHttpClient {
     virtual HttpResponse Get(const std::string& path,
                              const QueryParams& params = {}) = 0;
 
+    virtual HttpResponse Post(const std::string& path,
+                              const QueryParams& params = {}) = 0;
+
     virtual ~IHttpClient() = default;
 };
 
@@ -31,6 +34,8 @@ class HttplibHttpClient : public IHttpClient {
     HttplibHttpClient(const std::string& host) : cli_(host) {}
     HttpResponse Get(const std::string& path,
                      const QueryParams& params = {}) override;
+    HttpResponse Post(const std::string& path,
+                      const QueryParams& params = {}) override;
 
    private:
     httplib::SSLClient cli_;

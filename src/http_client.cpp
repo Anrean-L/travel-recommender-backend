@@ -2,8 +2,6 @@
 
 #include <httplib.h>
 
-#include "app/config.hpp"
-
 namespace app {
 
 HttpResponse HttplibHttpClient::Get(const std::string& path,
@@ -16,8 +14,19 @@ HttpResponse HttplibHttpClient::Get(const std::string& path,
     if (!res) {
         return HttpResponse{0, ""};
     }
-    if (IsErrorCode(res->status)) {
-        return HttpResponse{res->status};
+    return HttpResponse{res->status, res->body};
+}
+
+HttpResponse HttplibHttpClient::Post(const std::string& path,
+                                     const QueryParams& params) {
+    httplib::Params form_params;
+    for (const QueryParam& param : params) {
+        form_params.insert(param.key, param.value);
+    }
+
+    auto res = cli_.Post(path, form_params);
+    if (!res) {
+        return HttpResponse{0, ""};
     }
     return HttpResponse{res->status, res->body};
 }
