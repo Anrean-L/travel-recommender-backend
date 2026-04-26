@@ -26,3 +26,29 @@ set_target_properties(scheduler_tests PROPERTIES
 
 include(GoogleTest)
 gtest_discover_tests(scheduler_tests)
+
+add_executable(scoring_tests scoring_tests.cpp)
+
+target_include_directories(scoring_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+target_link_libraries(scoring_tests PRIVATE app_core GTest::gtest_main)
+
+set_target_properties(scoring_tests PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+)
+
+gtest_discover_tests(scoring_tests)
+
+add_executable(clients_tests clients_tests.cpp)
+
+target_include_directories(clients_tests PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+target_link_libraries(clients_tests PRIVATE app_core GTest::gtest_main)
+
+set_target_properties(clients_tests PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+)
+
+gtest_discover_tests(clients_tests)

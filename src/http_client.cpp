@@ -21,7 +21,7 @@ HttpResponse HttplibHttpClient::Post(const std::string& path,
                                      const QueryParams& params) {
     httplib::Params form_params;
     for (const QueryParam& param : params) {
-        form_params.insert(param.key, param.value);
+        form_params.emplace(param.key, param.value);
     }
 
     auto res = cli_.Post(path, form_params);
