@@ -17,10 +17,17 @@ std::expected<std::string, std::string> GetEnv(std::string_view key) {
 
 std::expected<Config, std::string> LoadConfig() {
     auto ip2_api_key = GetEnv("IP2_API_KEY");
+    auto ors_api_key = GetEnv("ORS_API_KEY");
     if (!ip2_api_key) {
         return std::unexpected(ip2_api_key.error());
     }
-    return Config{*ip2_api_key};
+    if (!ors_api_key) {
+        return std::unexpected(ors_api_key.error());
+    }
+    return Config{
+        *ip2_api_key,
+        *ors_api_key,
+    };
 }
 
 }  // namespace app
