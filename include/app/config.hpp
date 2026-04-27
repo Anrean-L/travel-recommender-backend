@@ -15,6 +15,7 @@ std::expected<std::string, std::string> GetEnv(std::string_view key);
 
 struct Config {
     std::string ip2_api_key;
+    std::string ors_api_key;
 };
 
 std::expected<Config, std::string> LoadConfig();
