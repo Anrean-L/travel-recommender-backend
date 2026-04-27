@@ -6,8 +6,10 @@
 #include "api/geolocation_client.hpp"
 #include "api/http_client.hpp"
 #include "api/places_client.hpp"
+#include "api/routing_client.hpp"
 #include "api/weather_client.hpp"
 #include "app/domain.hpp"
+#include "app/scoring.hpp"
 
 namespace {
 
@@ -44,6 +46,18 @@ const app::QueryParam* FindParam(const app::QueryParams& params,
         return nullptr;
     }
     return &*it;
+}
+
+app::ScoredPlace MakeScoredPlace(double score, double straight_distance_m,
+                                 app::Coordinates coords) {
+    app::ScoredPlace place;
+    place.place.name = "Test place";
+    place.place.kind = app::PlaceKind::kCafe;
+    place.place.environment = app::PlaceEnvironment::kIndoor;
+    place.place.coords = coords;
+    place.score = score;
+    place.straight_distance_m = straight_distance_m;
+    return place;
 }
 }  // namespace
 
@@ -207,4 +221,88 @@ TEST(PlacesClient, FetchPlacesSkipsDuplicatesAndUnnamedEntries) {
     ASSERT_EQ(result->size(), 1U);
     EXPECT_EQ(result->front().name, "Summer Garden");
     EXPECT_EQ(result->front().kind, app::PlaceKind::kGarden);
+}
+
+TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
+    FakeHttpClient http_client;
+    http_client.get_response = {200,
+                                R"({
+            "features": [
+                {
+                    "properties": {
+                        "summary": {
+                            "distance": 900.0,
+                            "duration": 600.0
+                        }
+                    }
+                }
+            ]
+        })"};
+
+    app::RoutingClient client(http_client, "ors-key");
+    const app::Coordinates origin{59.9386, 30.3141};
+    std::vector<app::ScoredPlace> places{
+        MakeScoredPlace(80.0, 700.0, {59.939, 30.32})};
+
+    const auto result = client.AddRoutes(origin, std::move(places));
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_EQ(http_client.last_get_path, "/v2/directions/foot-walking");
+    ASSERT_NE(FindParam(http_client.last_get_params, "api_key"), nullptr);
+    ASSERT_NE(FindParam(http_client.last_get_params, "start"), nullptr);
+    ASSERT_NE(FindParam(http_client.last_get_params, "end"), nullptr);
+    EXPECT_EQ(FindParam(http_client.last_get_params, "api_key")->value,
+              "ors-key");
+    EXPECT_EQ(FindParam(http_client.last_get_params, "start")->value,
+              "30.314100,59.938600");
+    EXPECT_EQ(FindParam(http_client.last_get_params, "end")->value,
+              "30.320000,59.939000");
+    EXPECT_DOUBLE_EQ(result.front().route_distance_m, 900.0);
+    EXPECT_DOUBLE_EQ(result.front().walk_time_min, 10.0);
+    EXPECT_DOUBLE_EQ(result.front().score, 80.0);
+}
+
+TEST(RoutingClient, AddRoutesFallsBackToStraightDistanceWhenRouteFails) {
+    FakeHttpClient http_client;
+    http_client.get_response = {200, R"({"features":[]})"};
+
+    app::RoutingClient client(http_client, "ors-key");
+    const app::Coordinates origin{59.9386, 30.3141};
+    std::vector<app::ScoredPlace> places{
+        MakeScoredPlace(80.0, 900.0, {59.939, 30.32})};
+
+    const auto result = client.AddRoutes(origin, std::move(places));
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_DOUBLE_EQ(result.front().route_distance_m, 900.0);
+    EXPECT_DOUBLE_EQ(result.front().walk_time_min, 15.0);
+    EXPECT_DOUBLE_EQ(result.front().score, 80.0);
+}
+
+TEST(Scoring, RerankWithRoutesAppliesRoutePenaltyForOkayWeather) {
+    app::WeatherInfo weather;
+    weather.mood = app::WeatherMood::kOkay;
+
+    std::vector<app::ScoredPlace> places{
+        MakeScoredPlace(80.0, 700.0, {59.939, 30.32})};
+    places.front().walk_time_min = 10.0;
+
+    const auto result = app::RerankWithRoutes(std::move(places), weather);
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_DOUBLE_EQ(result.front().score, 75.0);
+}
+
+TEST(Scoring, RerankWithRoutesAppliesWeatherAdjustedPenalty) {
+    app::WeatherInfo weather;
+    weather.mood = app::WeatherMood::kTerrible;
+
+    std::vector<app::ScoredPlace> places{
+        MakeScoredPlace(80.0, 900.0, {59.939, 30.32})};
+    places.front().walk_time_min = 15.0;
+
+    const auto result = app::RerankWithRoutes(std::move(places), weather);
+
+    ASSERT_EQ(result.size(), 1U);
+    EXPECT_DOUBLE_EQ(result.front().score, 64.0);
 }

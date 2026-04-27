@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "scheduler.hpp"
+#include "scheduler/scheduler.hpp"
 
 namespace {
 
