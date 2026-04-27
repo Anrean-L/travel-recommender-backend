@@ -1,8 +1,6 @@
 #include "app/scoring.hpp"
 
-#include <algorithm>
 #include <cmath>
-#include <map>
 #include <numbers>
 
 namespace app {
@@ -177,6 +175,31 @@ double CloudBonus(const Place& place, const WeatherInfo& weather) {
     return 0.0;
 }
 
+double RouteTimePenalty(double walk_time_min) {
+    if (walk_time_min <= 5.0) {
+        return 0.0;
+    }
+    if (walk_time_min <= 15.0) {
+        return (walk_time_min - 5.0) * 1.0;
+    }
+    if (walk_time_min <= 30.0) {
+        return 10.0 + (walk_time_min - 15.0) * 1.5;
+    }
+    return 32.5 + (walk_time_min - 30.0) * 2.0;
+}
+
+double RouteTimePenalty(double walk_time_min, const WeatherInfo& weather) {
+    double penalty = RouteTimePenalty(walk_time_min);
+
+    if (weather.mood == WeatherMood::kBad) {
+        penalty *= 1.25;
+    } else if (weather.mood == WeatherMood::kTerrible) {
+        penalty *= 1.6;
+    }
+
+    return penalty;
+}
+
 }  // namespace
 
 double HaversineDistanceMeters(const Coordinates& a, const Coordinates& b) {
@@ -223,45 +246,15 @@ std::vector<ScoredPlace> ScorePlaces(const std::vector<Place>& places,
     return result;
 }
 
-std::vector<ScoredPlace> SelectTopCandidates(std::vector<ScoredPlace> places,
-                                             std::size_t max_count) {
-    std::sort(places.begin(), places.end(),
-              [](const ScoredPlace& lhs, const ScoredPlace& rhs) {
-                  return lhs.score > rhs.score;
-              });
-
-    if (places.size() > max_count) {
-        places.resize(max_count);
+std::vector<ScoredPlace> RerankWithRoutes(std::vector<ScoredPlace> places,
+                                          const WeatherInfo& weather) {
+    for (auto& place : places) {
+        if (place.walk_time_min > 0.0) {
+            place.score -= RouteTimePenalty(place.walk_time_min, weather);
+        }
     }
+
     return places;
-}
-
-std::vector<ScoredPlace> DiversifyPlaces(std::vector<ScoredPlace> places,
-                                         int max_results) {
-    std::sort(places.begin(), places.end(),
-              [](const ScoredPlace& lhs, const ScoredPlace& rhs) {
-                  return lhs.score > rhs.score;
-              });
-
-    std::vector<ScoredPlace> result;
-    std::map<PlaceKind, int> count_by_kind;
-
-    for (ScoredPlace& place : places) {
-        if (result.size() >= static_cast<std::size_t>(max_results)) {
-            break;
-        }
-
-        int& count = count_by_kind[place.place.kind];
-
-        if (count >= 3) {
-            continue;
-        }
-
-        result.push_back(std::move(place));
-        ++count;
-    }
-
-    return result;
 }
 
 }  // namespace app
