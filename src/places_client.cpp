@@ -1,5 +1,7 @@
 #include "api/places_client.hpp"
 
+#include <cstdint>
+
 #include "api/http_client.hpp"
 #include "app/config.hpp"
 #include "app/domain.hpp"
@@ -24,7 +26,7 @@ std::vector<OsmTag> tags = {
     {"amenity", "pub"},        {"amenity", "nightclub"},
     {"leisure", "park"},       {"leisure", "garden"},
     {"shop", "bakery"},        {"historic", "monument"},
-    {"historic", "memorial"},  {"historic", "building"},
+    {"historic", "memorial"},
 };
 
 std::string GetString(const json& object, const std::string& key) {
@@ -180,7 +182,7 @@ std::string GetWebsite(const json& tags) {
 }
 
 bool AlreadyAdded(const std::vector<Place>& places, const std::string& osm_type,
-                  long long osm_id) {
+                  uint64_t osm_id) {
     for (const Place& place : places) {
         if (place.osm_type == osm_type && place.osm_id == osm_id) {
             return true;
@@ -262,7 +264,7 @@ std::expected<std::vector<Place>, std::string> PlacesClient::ParsePlaces(
             }
 
             std::string osm_type = GetString(element, "type");
-            long long osm_id = element.at("id").get<long long>();
+            uint64_t osm_id = element.at("id").get<uint64_t>();
 
             if (AlreadyAdded(places, osm_type, osm_id)) {
                 continue;
