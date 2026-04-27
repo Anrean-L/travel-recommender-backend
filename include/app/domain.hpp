@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 
 namespace app {
@@ -32,6 +33,70 @@ struct WeatherInfo {
     std::string description;
 };
 
-struct Place {};
+enum class PlaceKind {
+    kMuseum,
+    kGallery,
+    kAttraction,
+    kViewpoint,
+    kCafe,
+    kRestaurant,
+    kFastFood,
+    kBar,
+    kPub,
+    kNightclub,
+    kPark,
+    kGarden,
+    kBakery,
+    kHistoric,
+    kTheatre,
+    kCinema,
+    kUnknown,
+};
+
+constexpr bool HasNightBonus(PlaceKind kind) {
+    switch (kind) {
+        case PlaceKind::kBar:
+        case PlaceKind::kPub:
+        case PlaceKind::kNightclub:
+        case PlaceKind::kTheatre:
+        case PlaceKind::kCinema:
+            return true;
+        default:
+            return false;
+    }
+}
+
+enum class PlaceEnvironment {
+    kIndoor,
+    kOutdoor,
+    kMixed,
+};
+struct Place {
+    std::string name;
+    PlaceKind kind;
+    PlaceEnvironment environment;
+    Coordinates coords;
+
+    std::string osm_type;
+    uint64_t osm_id{};
+
+    std::string address;
+    std::string website;
+    std::string opening_hours;
+};
+
+struct ScoredPlace {
+    Place place;
+    double score{};
+    double straight_distance_m{};
+    double route_distance_m{};
+    double walk_time_min{};
+    std::string reason;
+};
+
+struct RouteInfo {
+    double distance_m{};
+    double duration_sec{};
+};
 
 }  // namespace app
