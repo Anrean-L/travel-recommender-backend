@@ -20,25 +20,23 @@ bool IsOutdoor(PlaceEnvironment env) {
 double BaseKindScore(PlaceKind kind) {
     switch (kind) {
         case PlaceKind::kMuseum:
-            return 70.0;
+            return 58.0;
         case PlaceKind::kGallery:
-            return 65.0;
-        case PlaceKind::kAttraction:
-            return 68.0;
+            return 58.0;
         case PlaceKind::kViewpoint:
             return 62.0;
         case PlaceKind::kCafe:
             return 58.0;
         case PlaceKind::kRestaurant:
-            return 56.0;
+            return 60.0;
         case PlaceKind::kFastFood:
-            return 42.0;
+            return 48.0;
         case PlaceKind::kBar:
             return 48.0;
         case PlaceKind::kPub:
-            return 50.0;
-        case PlaceKind::kNightclub:
             return 44.0;
+        case PlaceKind::kNightclub:
+            return 54.0;
         case PlaceKind::kPark:
             return 64.0;
         case PlaceKind::kGarden:
@@ -46,11 +44,11 @@ double BaseKindScore(PlaceKind kind) {
         case PlaceKind::kBakery:
             return 54.0;
         case PlaceKind::kHistoric:
-            return 66.0;
-        case PlaceKind::kTheatre:
-            return 63.0;
-        case PlaceKind::kCinema:
             return 55.0;
+        case PlaceKind::kTheatre:
+            return 50.0;
+        case PlaceKind::kCinema:
+            return 50.0;
         default:
             return 40.0;
     }

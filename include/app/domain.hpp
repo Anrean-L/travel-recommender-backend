@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace app {
 
@@ -36,7 +37,6 @@ struct WeatherInfo {
 enum class PlaceKind {
     kMuseum,
     kGallery,
-    kAttraction,
     kViewpoint,
     kCafe,
     kRestaurant,
@@ -97,6 +97,22 @@ struct ScoredPlace {
 struct RouteInfo {
     double distance_m{};
     double duration_sec{};
+};
+
+struct RecommendationResponse {
+    Coordinates location{};
+    WeatherInfo weather{};
+    std::vector<ScoredPlace> places{};
+};
+
+struct RecommendationRequest {
+    bool has_coordinates = false;
+    Coordinates coords{};
+
+    std::string client_ip;
+
+    int radius_m = 1000;
+    int max_results = 10;
 };
 
 }  // namespace app

@@ -20,13 +20,12 @@ struct OsmTag {
 
 std::vector<OsmTag> tags = {
     {"tourism", "museum"},     {"tourism", "gallery"},
-    {"tourism", "attraction"}, {"tourism", "viewpoint"},
-    {"amenity", "cafe"},       {"amenity", "restaurant"},
-    {"amenity", "fast_food"},  {"amenity", "bar"},
-    {"amenity", "pub"},        {"amenity", "nightclub"},
-    {"leisure", "park"},       {"leisure", "garden"},
-    {"shop", "bakery"},        {"historic", "monument"},
-    {"historic", "memorial"},
+    {"tourism", "viewpoint"},  {"amenity", "cafe"},
+    {"amenity", "restaurant"}, {"amenity", "fast_food"},
+    {"amenity", "bar"},        {"amenity", "pub"},
+    {"amenity", "nightclub"},  {"leisure", "park"},
+    {"leisure", "garden"},     {"shop", "bakery"},
+    {"historic", "monument"},  {"historic", "memorial"},
 };
 
 std::string GetString(const json& object, const std::string& key) {
@@ -68,9 +67,6 @@ PlaceKind ParsePlaceKind(const json& tags) {
     }
     if (tourism == "gallery") {
         return PlaceKind::kGallery;
-    }
-    if (tourism == "attraction") {
-        return PlaceKind::kAttraction;
     }
     if (tourism == "viewpoint") {
         return PlaceKind::kViewpoint;
@@ -126,7 +122,6 @@ PlaceEnvironment GetEnvironment(PlaceKind kind) {
         case PlaceKind::kViewpoint: {
             return PlaceEnvironment::kOutdoor;
         }
-        case PlaceKind::kAttraction:
         case PlaceKind::kHistoric: {
             return PlaceEnvironment::kMixed;
         }
