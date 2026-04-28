@@ -16,7 +16,7 @@ std::expected<std::string, std::string> GetEnv(std::string_view key) {
 }
 
 std::expected<Config, std::string> LoadConfig() {
-    auto ip2_api_key = GetEnv("IP2_API_KEY");
+    auto ip2_api_key = GetEnv("TWO_IP_API_KEY");
     auto ors_api_key = GetEnv("ORS_API_KEY");
     if (!ip2_api_key) {
         return std::unexpected(ip2_api_key.error());
