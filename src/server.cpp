@@ -7,6 +7,7 @@
 #include <string>
 
 #include "app/domain_json.hpp"
+#include "app/logger.hpp"
 #include "app/recommendation.hpp"
 
 namespace app {
@@ -91,6 +92,7 @@ void RunServer(int port, WeatherClient& weather_client,
 
     server.Get("/recommend", [&](const httplib::Request& req,
                                  httplib::Response& res) {
+        LogInfo("GET /recommend from " + GetClientIp(req));
         RecommendationRequest request;
 
         request.radius_m = ParseIntParamOrDefault(req, "radius_m", 1000);
@@ -127,7 +129,10 @@ void RunServer(int port, WeatherClient& weather_client,
         SendJson(res, json(*result));
     });
 
-    server.listen("0.0.0.0", port);
+    LogInfo("Server is starting on http://0.0.0.0:" + std::to_string(port));
+    if (!server.listen("0.0.0.0", port)) {
+        LogError("Failed to start server on port " + std::to_string(port));
+    }
 }
 
 }  // namespace app

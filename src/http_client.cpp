@@ -5,6 +5,7 @@
 #include <chrono>
 
 #include "app/config.hpp"
+#include "app/logger.hpp"
 
 namespace app {
 
@@ -67,6 +68,7 @@ void HttplibHttpClient::StoreCache(const std::string& key,
 
 HttpResponse HttplibHttpClient::Get(const std::string& path,
                                     const QueryParams& params) {
+    LogInfo("HTTP GET " + path);
     const std::string key = BuildCacheKey("Get", path, params);
     if (auto cached = TryGetCached(key)) {
         return *cached;
@@ -79,12 +81,18 @@ HttpResponse HttplibHttpClient::Get(const std::string& path,
     HttpResponse response =
         res ? HttpResponse{res->status, res->body} : HttpResponse{0, ""};
 
-    StoreCache(key, response);
+    LogInfo("HTTP GET " + path + " finished with status " +
+            std::to_string(response.status));
+
+    if (!IsErrorCode(response.status)) {
+        StoreCache(key, response);
+    }
     return response;
 }
 
 HttpResponse HttplibHttpClient::Post(const std::string& path,
                                      const QueryParams& params) {
+    LogInfo("HTTP POST " + path);
     const std::string key = BuildCacheKey("Post", path, params);
     if (auto cached = TryGetCached(key)) {
         return *cached;
@@ -98,7 +106,12 @@ HttpResponse HttplibHttpClient::Post(const std::string& path,
     HttpResponse response =
         res ? HttpResponse{res->status, res->body} : HttpResponse{0, ""};
 
-    StoreCache(key, response);
+    LogInfo("HTTP POST " + path + " finished with status " +
+            std::to_string(response.status));
+
+    if (!IsErrorCode(response.status)) {
+        StoreCache(key, response);
+    }
     return response;
 }
 

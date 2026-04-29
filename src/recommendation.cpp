@@ -4,9 +4,11 @@
 #include <exception>
 #include <expected>
 #include <map>
+#include <string>
 #include <vector>
 
 #include "app/domain.hpp"
+#include "app/logger.hpp"
 #include "app/scoring.hpp"
 #include "scheduler/scheduler.hpp"
 
@@ -76,24 +78,27 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
     PlacesClient& places_client, RoutingClient& routing_client,
     GeolocationClient& geolocation_client) {
     try {
+        LogInfo("Building recommendations...");
         scheduler::TTaskScheduler scheduler;
 
-        auto location = scheduler.Add([&request, &geolocation_client]() {
-            if (request.has_coordinates) {
-                return request.coords;
-            }
-            return Unwrap(
-                geolocation_client.FetchCoordinates(request.client_ip));
-        });
+        auto location =
+            scheduler.Add([&request, &geolocation_client]() -> Coordinates {
+                if (request.has_coordinates) {
+                    return request.coords;
+                }
+                return Unwrap(
+                    geolocation_client.FetchCoordinates(request.client_ip));
+            });
 
         auto weather = scheduler.Add(
-            [&weather_client](const Coordinates& location) {
+            [&weather_client](const Coordinates& location) -> WeatherInfo {
                 return Unwrap(weather_client.FetchWeather(location));
             },
             location.GetFutureResult<const Coordinates&>());
 
         auto places = scheduler.Add(
-            [&places_client, &request](const Coordinates& location) {
+            [&places_client,
+             &request](const Coordinates& location) -> std::vector<Place> {
                 return Unwrap(
                     places_client.FetchPlaces(location, request.radius_m));
             },
@@ -101,7 +106,7 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
 
         auto scored_places = scheduler.Add(
             [](std::vector<Place> places, const WeatherInfo& weather,
-               const Coordinates& location) {
+               const Coordinates& location) -> std::vector<ScoredPlace> {
                 return ScorePlaces(places, weather, location);
             },
             places.GetFutureResult<std::vector<Place>>(),
@@ -109,28 +114,31 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
             location.GetFutureResult<const Coordinates&>());
 
         auto candidates = scheduler.Add(
-            [](std::vector<ScoredPlace> places) {
-                return SelectDiverseTopCandidates(std::move(places), 30, 8);
+            [](std::vector<ScoredPlace> places) -> std::vector<ScoredPlace> {
+                return SelectDiverseTopCandidates(std::move(places), 25, 6);
             },
             scored_places.GetFutureResult<std::vector<ScoredPlace>>());
 
         auto routed_places = scheduler.Add(
-            [&routing_client](const Coordinates& location,
-                              std::vector<ScoredPlace> places) {
+            [&routing_client](
+                const Coordinates& location,
+                std::vector<ScoredPlace> places) -> std::vector<ScoredPlace> {
                 return routing_client.AddRoutes(location, std::move(places));
             },
             location.GetFutureResult<const Coordinates&>(),
             candidates.GetFutureResult<std::vector<ScoredPlace>>());
 
         auto reranked = scheduler.Add(
-            [](std::vector<ScoredPlace> places, const WeatherInfo& weather) {
+            [](std::vector<ScoredPlace> places,
+               const WeatherInfo& weather) -> std::vector<ScoredPlace> {
                 return RerankWithRoutes(std::move(places), weather);
             },
             routed_places.GetFutureResult<std::vector<ScoredPlace>>(),
             weather.GetFutureResult<const WeatherInfo&>());
 
         auto final_places = scheduler.Add(
-            [&request](std::vector<ScoredPlace> places) {
+            [&request](
+                std::vector<ScoredPlace> places) -> std::vector<ScoredPlace> {
                 return SelectDiverseTopCandidates(std::move(places),
                                                   request.max_results, 3);
             },
@@ -138,7 +146,7 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
 
         auto response = scheduler.Add(
             [](const Coordinates& location, const WeatherInfo& weather,
-               std::vector<ScoredPlace> places) {
+               std::vector<ScoredPlace> places) -> RecommendationResponse {
                 return RecommendationResponse{
                     location,
                     weather,
@@ -149,8 +157,11 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
             weather.GetFutureResult<const WeatherInfo&>(),
             final_places.GetFutureResult<std::vector<ScoredPlace>>());
 
-        return response.GetResultSync<RecommendationResponse>();
+        auto result = response.GetResultSync<RecommendationResponse>();
+        LogInfo("Recommendations built successfully");
+        return result;
     } catch (const std::exception& e) {
+        LogError("Recommendation failed: " + std::string(e.what()));
         return std::unexpected(e.what());
     }
 }
