@@ -1,0 +1,149 @@
+#pragma once
+
+#include <cstdlib>
+#include <nlohmann/json.hpp>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "api/http_client.hpp"
+
+namespace test_support {
+
+using json = nlohmann::json;
+
+class ScopedEnvVar final {
+   public:
+    explicit ScopedEnvVar(std::string key) : key_(std::move(key)) {
+        if (const char* value = std::getenv(key_.c_str())) {
+            had_value_ = true;
+            value_ = value;
+        }
+    }
+
+    ~ScopedEnvVar() {
+        if (had_value_) {
+            Set(value_);
+        } else {
+            Unset();
+        }
+    }
+
+    void Set(std::string_view value) const {
+#ifdef _WIN32
+        _putenv_s(key_.c_str(), std::string(value).c_str());
+#else
+        setenv(key_.c_str(), std::string(value).c_str(), 1);
+#endif
+    }
+
+    void Unset() const {
+#ifdef _WIN32
+        _putenv_s(key_.c_str(), "");
+#else
+        unsetenv(key_.c_str());
+#endif
+    }
+
+   private:
+    std::string key_;
+    bool had_value_ = false;
+    std::string value_;
+};
+
+class ScenarioHttpClient final : public app::IHttpClient {
+   public:
+    app::HttpResponse Get(const std::string& path,
+                          const app::QueryParams& params = {}) override {
+        get_requests.push_back({path, params});
+
+        if (path == "/v1/forecast") {
+            ++weather_calls;
+            return weather_response;
+        }
+
+        if (path == "/v2/directions/foot-walking") {
+            ++routing_calls;
+            return routing_response;
+        }
+
+        ++geolocation_calls;
+        return geolocation_response;
+    }
+
+    app::HttpResponse Post(const std::string& path,
+                           const app::QueryParams& params = {}) override {
+        post_requests.push_back({path, params});
+        ++places_calls;
+        return places_response;
+    }
+
+    struct RequestRecord {
+        std::string path;
+        app::QueryParams params;
+    };
+
+    app::HttpResponse geolocation_response{200, ""};
+    app::HttpResponse weather_response{200, ""};
+    app::HttpResponse routing_response{200, ""};
+    app::HttpResponse places_response{200, ""};
+
+    int geolocation_calls = 0;
+    int weather_calls = 0;
+    int routing_calls = 0;
+    int places_calls = 0;
+
+    std::vector<RequestRecord> get_requests;
+    std::vector<RequestRecord> post_requests;
+};
+
+inline app::HttpResponse MakeGeolocationResponse(double lat, double lon) {
+    return {200,
+            json{{"lat", std::to_string(lat)}, {"lon", std::to_string(lon)}}
+                .dump()};
+}
+
+inline app::HttpResponse MakeWeatherResponse(
+    double rain, bool is_day, double temperature = 20.0,
+    double apparent_temperature = 20.0) {
+    return {200, json{{"current",
+                       {{"temperature_2m", temperature},
+                        {"apparent_temperature", apparent_temperature},
+                        {"relative_humidity_2m", 55.0},
+                        {"rain", rain},
+                        {"snowfall", 0.0},
+                        {"wind_speed_10m", 8.0},
+                        {"wind_gusts_10m", 12.0},
+                        {"wind_direction_10m", 180},
+                        {"weather_code", 0},
+                        {"is_day", is_day ? 1 : 0},
+                        {"cloud_cover", 20}}}}
+                     .dump()};
+}
+
+inline app::HttpResponse MakeRouteResponse(double distance_m,
+                                           double duration_sec) {
+    return {
+        200,
+        json{{"features",
+              {{{"properties",
+                 {{"summary",
+                   {{"distance", distance_m}, {"duration", duration_sec}}}}}}}}}
+            .dump()};
+}
+
+inline app::HttpResponse MakePlacesResponse(const json& elements) {
+    return {200, json{{"elements", elements}}.dump()};
+}
+
+inline json MakePlaceElement(std::uint64_t id, std::string name,
+                             std::string amenity, double lat, double lon) {
+    return json{
+        {"type", "node"},
+        {"id", id},
+        {"lat", lat},
+        {"lon", lon},
+        {"tags", {{"name", std::move(name)}, {"amenity", std::move(amenity)}}}};
+}
+
+}  // namespace test_support
