@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <optional>
 
 #include "api/http_client.hpp"
 #include "app/domain.hpp"
@@ -20,8 +21,9 @@ class RoutingClient {
     IHttpClient& client_;
     std::string api_key_;
 
-    std::expected<RouteInfo, std::string> FetchRoute(
-        const Coordinates& origin, const Coordinates& destination);
+    std::expected<std::vector<std::optional<RouteInfo>>, std::string>
+    FetchRoutes(const Coordinates& origin,
+                const std::vector<ScoredPlace>& places);
 };
 
 }  // namespace app

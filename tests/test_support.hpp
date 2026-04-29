@@ -62,11 +62,6 @@ class ScenarioHttpClient final : public app::IHttpClient {
             return weather_response;
         }
 
-        if (path == "/v2/directions/foot-walking") {
-            ++routing_calls;
-            return routing_response;
-        }
-
         ++geolocation_calls;
         return geolocation_response;
     }
@@ -78,9 +73,28 @@ class ScenarioHttpClient final : public app::IHttpClient {
         return places_response;
     }
 
+    app::HttpResponse Post(const std::string& path,
+                           const app::HttpRequestBody& body,
+                           const app::QueryParams& params = {}) override {
+        post_json_requests.push_back({path, params, body});
+
+        if (path == "/v2/matrix/foot-walking") {
+            ++routing_calls;
+            return routing_response;
+        }
+
+        return {0, ""};
+    }
+
     struct RequestRecord {
         std::string path;
         app::QueryParams params;
+    };
+
+    struct JsonRequestRecord {
+        std::string path;
+        app::QueryParams params;
+        app::HttpRequestBody body;
     };
 
     app::HttpResponse geolocation_response{200, ""};
@@ -95,6 +109,7 @@ class ScenarioHttpClient final : public app::IHttpClient {
 
     std::vector<RequestRecord> get_requests;
     std::vector<RequestRecord> post_requests;
+    std::vector<JsonRequestRecord> post_json_requests;
 };
 
 inline app::HttpResponse MakeGeolocationResponse(double lat, double lon) {
@@ -123,13 +138,10 @@ inline app::HttpResponse MakeWeatherResponse(
 
 inline app::HttpResponse MakeRouteResponse(double distance_m,
                                            double duration_sec) {
-    return {
-        200,
-        json{{"features",
-              {{{"properties",
-                 {{"summary",
-                   {{"distance", distance_m}, {"duration", duration_sec}}}}}}}}}
-            .dump()};
+    return {200,
+            json{{"distances", json::array({json::array({distance_m})})},
+                 {"durations", json::array({json::array({duration_sec})})}}
+                .dump()};
 }
 
 inline app::HttpResponse MakePlacesResponse(const json& elements) {

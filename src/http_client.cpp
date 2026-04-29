@@ -3,6 +3,8 @@
 #include <httplib.h>
 
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 
 #include "app/config.hpp"
 #include "app/logger.hpp"
@@ -12,12 +14,49 @@ namespace app {
 namespace {
 
 std::string BuildCacheKey(const std::string& method, const std::string& path,
-                          const QueryParams& params) {
+                          const QueryParams& params,
+                          const std::string& body = {}) {
     std::string key = method + ":" + path + "?";
     for (const auto& param : params) {
         key += param.key + "=" + param.value + "&";
     }
+    key += "#" + body;
     return key;
+}
+
+bool IsUnreservedChar(unsigned char value) {
+    return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') ||
+           (value >= '0' && value <= '9') || value == '-' || value == '_' ||
+           value == '.' || value == '~';
+}
+
+std::string EncodeQueryValue(const std::string& value) {
+    std::ostringstream encoded;
+    encoded << std::uppercase << std::hex;
+    for (unsigned char ch : value) {
+        if (IsUnreservedChar(ch)) {
+            encoded << ch;
+        } else {
+            encoded << '%' << std::setw(2) << std::setfill('0')
+                    << static_cast<int>(ch);
+        }
+    }
+    return encoded.str();
+}
+
+std::string BuildPathWithQuery(const std::string& path,
+                               const QueryParams& params) {
+    if (params.empty()) {
+        return path;
+    }
+    std::string path_with_query = path + "?";
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        if (i != 0) {
+            path_with_query += "&";
+        }
+        path_with_query += params[i].key + "=" + EncodeQueryValue(params[i].value);
+    }
+    return path_with_query;
 }
 
 }  // namespace
@@ -103,6 +142,29 @@ HttpResponse HttplibHttpClient::Post(const std::string& path,
     }
 
     auto res = cli_.Post(path, form_params);
+    HttpResponse response =
+        res ? HttpResponse{res->status, res->body} : HttpResponse{0, ""};
+
+    LogInfo("HTTP POST " + path + " finished with status " +
+            std::to_string(response.status));
+
+    if (!IsErrorCode(response.status)) {
+        StoreCache(key, response);
+    }
+    return response;
+}
+
+HttpResponse HttplibHttpClient::Post(const std::string& path,
+                                     const HttpRequestBody& body,
+                                     const QueryParams& params) {
+    LogInfo("HTTP POST " + path);
+    const std::string key = BuildCacheKey("Post", path, params, body.content);
+    if (auto cached = TryGetCached(key)) {
+        return *cached;
+    }
+
+    auto res = cli_.Post(BuildPathWithQuery(path, params), httplib::Headers{},
+                         body.content, body.content_type.c_str());
     HttpResponse response =
         res ? HttpResponse{res->status, res->body} : HttpResponse{0, ""};
 

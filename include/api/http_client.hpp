@@ -22,12 +22,21 @@ struct QueryParam {
 
 using QueryParams = std::vector<app::QueryParam>;
 
+struct HttpRequestBody {
+    std::string content;
+    std::string content_type;
+};
+
 class IHttpClient {
    public:
     virtual HttpResponse Get(const std::string& path,
                              const QueryParams& params = {}) = 0;
 
     virtual HttpResponse Post(const std::string& path,
+                              const QueryParams& params = {}) = 0;
+
+    virtual HttpResponse Post(const std::string& path,
+                              const HttpRequestBody& body,
                               const QueryParams& params = {}) = 0;
 
     virtual ~IHttpClient() = default;
@@ -43,6 +52,9 @@ class HttplibHttpClient : public IHttpClient {
 
     HttpResponse Post(const std::string& path,
                       const QueryParams& params) override;
+
+    HttpResponse Post(const std::string& path, const HttpRequestBody& body,
+                      const QueryParams& params = {}) override;
 
    private:
     struct CacheEntry {

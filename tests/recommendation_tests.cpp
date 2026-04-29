@@ -42,7 +42,7 @@ TEST(Recommendation, BuildRecommendationsSkipsGeolocationWhenCoordsProvided) {
     EXPECT_EQ(http_client.geolocation_calls, 0);
     EXPECT_EQ(http_client.weather_calls, 1);
     EXPECT_EQ(http_client.places_calls, 1);
-    EXPECT_EQ(http_client.routing_calls, 2);
+    EXPECT_EQ(http_client.routing_calls, 1);
     EXPECT_DOUBLE_EQ(result->location.lat, 59.9386);
     EXPECT_DOUBLE_EQ(result->location.lon, 30.3141);
     ASSERT_EQ(result->places.size(), 2U);

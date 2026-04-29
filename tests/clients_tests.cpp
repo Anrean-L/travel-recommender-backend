@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "api/geolocation_client.hpp"
@@ -29,12 +30,25 @@ class FakeHttpClient final : public app::IHttpClient {
         return post_response;
     }
 
+    app::HttpResponse Post(const std::string& path,
+                           const app::HttpRequestBody& body,
+                           const app::QueryParams& params = {}) override {
+        last_post_json_path = path;
+        last_post_json_body = body;
+        last_post_json_params = params;
+        return post_json_response;
+    }
+
     app::HttpResponse get_response{200, ""};
     app::HttpResponse post_response{200, ""};
+    app::HttpResponse post_json_response{200, ""};
     std::string last_get_path;
     std::string last_post_path;
+    std::string last_post_json_path;
     app::QueryParams last_get_params;
     app::QueryParams last_post_params;
+    app::QueryParams last_post_json_params;
+    app::HttpRequestBody last_post_json_body;
 };
 
 const app::QueryParam* FindParam(const app::QueryParams& params,
@@ -225,19 +239,8 @@ TEST(PlacesClient, FetchPlacesSkipsDuplicatesAndUnnamedEntries) {
 
 TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
     FakeHttpClient http_client;
-    http_client.get_response = {200,
-                                R"({
-            "features": [
-                {
-                    "properties": {
-                        "summary": {
-                            "distance": 900.0,
-                            "duration": 600.0
-                        }
-                    }
-                }
-            ]
-        })"};
+    http_client.post_json_response = {
+        200, R"({"distances":[[900.0]],"durations":[[600.0]]})"};
 
     app::RoutingClient client(http_client, "ors-key");
     const app::Coordinates origin{59.9386, 30.3141};
@@ -247,16 +250,20 @@ TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
     const auto result = client.AddRoutes(origin, std::move(places));
 
     ASSERT_EQ(result.size(), 1U);
-    EXPECT_EQ(http_client.last_get_path, "/v2/directions/foot-walking");
-    ASSERT_NE(FindParam(http_client.last_get_params, "api_key"), nullptr);
-    ASSERT_NE(FindParam(http_client.last_get_params, "start"), nullptr);
-    ASSERT_NE(FindParam(http_client.last_get_params, "end"), nullptr);
-    EXPECT_EQ(FindParam(http_client.last_get_params, "api_key")->value,
+    EXPECT_EQ(http_client.last_post_json_path, "/v2/matrix/foot-walking");
+    ASSERT_NE(FindParam(http_client.last_post_json_params, "api_key"), nullptr);
+    EXPECT_EQ(FindParam(http_client.last_post_json_params, "api_key")->value,
               "ors-key");
-    EXPECT_EQ(FindParam(http_client.last_get_params, "start")->value,
-              "30.314100,59.938600");
-    EXPECT_EQ(FindParam(http_client.last_get_params, "end")->value,
-              "30.320000,59.939000");
+    EXPECT_EQ(http_client.last_post_json_body.content_type, "application/json");
+    const auto body =
+        nlohmann::json::parse(http_client.last_post_json_body.content);
+    EXPECT_EQ(body.at("locations"),
+              nlohmann::json::array({nlohmann::json::array({30.3141, 59.9386}),
+                                     nlohmann::json::array({30.32, 59.939})}));
+    EXPECT_EQ(body.at("sources"), nlohmann::json::array({0}));
+    EXPECT_EQ(body.at("destinations"), nlohmann::json::array({1}));
+    EXPECT_EQ(body.at("metrics"),
+              nlohmann::json::array({"distance", "duration"}));
     EXPECT_DOUBLE_EQ(result.front().route_distance_m, 900.0);
     EXPECT_DOUBLE_EQ(result.front().walk_time_min, 10.0);
     EXPECT_DOUBLE_EQ(result.front().score, 80.0);
@@ -264,7 +271,7 @@ TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
 
 TEST(RoutingClient, AddRoutesFallsBackToStraightDistanceWhenRouteFails) {
     FakeHttpClient http_client;
-    http_client.get_response = {200, R"({"features":[]})"};
+    http_client.post_json_response = {200, R"({"distances":[],"durations":[]})"};
 
     app::RoutingClient client(http_client, "ors-key");
     const app::Coordinates origin{59.9386, 30.3141};

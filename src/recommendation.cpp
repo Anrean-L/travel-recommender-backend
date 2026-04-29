@@ -115,7 +115,7 @@ std::expected<RecommendationResponse, std::string> BuildRecommendations(
 
         auto candidates = scheduler.Add(
             [](std::vector<ScoredPlace> places) -> std::vector<ScoredPlace> {
-                return SelectDiverseTopCandidates(std::move(places), 25, 6);
+                return SelectDiverseTopCandidates(std::move(places), 40, 8);
             },
             scored_places.GetFutureResult<std::vector<ScoredPlace>>());
 
