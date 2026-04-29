@@ -3,10 +3,11 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "scheduler/meta.hpp"
 
 namespace scheduler {
 
@@ -33,8 +34,7 @@ decltype(auto) Resolve(Arg& arg) {
 }
 
 template <typename F, typename... Args>
-using InvokeResult =
-    std::invoke_result_t<F&, typename ArgTraits<Args>::Type...>;
+using InvokeResult = meta::InvokeResultT<F&, typename ArgTraits<Args>::Type...>;
 template <typename F, typename... Args>
 using StoredResult = std::decay_t<InvokeResult<F, Args...>>;
 
@@ -43,29 +43,29 @@ struct FunctionTraits;
 
 template <typename R, typename... Args>
 struct FunctionTraits<R (*)(Args...)> {
-    using ArgsTuple = std::tuple<Args...>;
+    using ArgsTuple = meta::TypeList<Args...>;
     static constexpr std::size_t kArity = sizeof...(Args);
 
     template <std::size_t I>
-    using Arg = std::tuple_element_t<I, ArgsTuple>;
+    using Arg = meta::ListElementT<I, ArgsTuple>;
 };
 
 template <typename R, typename C, typename... Args>
 struct FunctionTraits<R (C::*)(Args...) const> {
-    using ArgsTuple = std::tuple<Args...>;
+    using ArgsTuple = meta::TypeList<Args...>;
     static constexpr std::size_t kArity = sizeof...(Args);
 
     template <std::size_t I>
-    using Arg = std::tuple_element_t<I, ArgsTuple>;
+    using Arg = meta::ListElementT<I, ArgsTuple>;
 };
 
 template <typename R, typename C, typename... Args>
 struct FunctionTraits<R (C::*)(Args...)> {
-    using ArgsTuple = std::tuple<Args...>;
+    using ArgsTuple = meta::TypeList<Args...>;
     static constexpr std::size_t kArity = sizeof...(Args);
 
     template <std::size_t I>
-    using Arg = std::tuple_element_t<I, ArgsTuple>;
+    using Arg = meta::ListElementT<I, ArgsTuple>;
 };
 
 template <typename F>
@@ -82,21 +82,21 @@ template <typename Tuple>
 struct DecayTuple;
 
 template <typename... Ts>
-struct DecayTuple<std::tuple<Ts...>> {
-    using Type = std::tuple<std::decay_t<Ts>...>;
+struct DecayTuple<meta::TypeList<Ts...>> {
+    using Type = meta::Tuple<std::decay_t<Ts>...>;
 };
 
 template <typename F, typename Tuple, std::size_t... Is>
 decltype(auto) CallFromTupleImpl(F&& f, Tuple&& tuple,
-                                 std::index_sequence<Is...>) {
-    return std::forward<F>(f)(std::get<Is>(std::forward<Tuple>(tuple))...);
+                                 meta::IndexSequence<Is...>) {
+    return std::forward<F>(f)(meta::Get<Is>(std::forward<Tuple>(tuple))...);
 }
 
 template <typename F, typename Tuple>
 decltype(auto) CallFromTuple(F&& f, Tuple&& tuple) {
-    constexpr size_t N = std::tuple_size_v<std::remove_reference_t<Tuple>>;
+    constexpr std::size_t N = std::remove_reference_t<Tuple>::kSize;
     return CallFromTupleImpl(std::forward<F>(f), std::forward<Tuple>(tuple),
-                             std::make_index_sequence<N>{});
+                             meta::MakeIndexSequence<N>{});
 }
 class AccessAfterMove : public std::exception {
    public:
@@ -145,7 +145,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     using ResultT = InvokeResult<F, Args...>;
     using StoredResultT = StoredResult<F, Args...>;
     using StoredF = std::decay_t<F>;
-    using StoredArgs = std::tuple<std::decay_t<Args>...>;
+    using StoredArgs = meta::Tuple<std::decay_t<Args>...>;
 
    public:
     Node(F f, Args... args) : func_(std::move(f)), args_(std::move(args)...) {}
@@ -162,11 +162,11 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
         }
         try {
             if constexpr (std::is_member_function_pointer_v<StoredF>) {
-                result_ = std::make_unique<StoredResultT>(CallMethod(
-                    std::make_index_sequence<sizeof...(Args) - 1>{}));
+                result_ = std::make_unique<StoredResultT>(
+                    CallMethod(meta::MakeIndexSequence<sizeof...(Args) - 1>{}));
             } else {
                 result_ = std::make_unique<StoredResultT>(
-                    CallRegular(std::index_sequence_for<Args...>{}));
+                    CallRegular(meta::IndexSequenceFor<Args...>{}));
             }
             state_ = INode::State::kExecuted;
         } catch (...) {
@@ -198,19 +198,19 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     bool expired_ = false;
 
     template <std::size_t... Is>
-    ResultT CallMethod(std::index_sequence<Is...>) {
-        auto&& obj = Resolve(std::get<0>(args_));
+    ResultT CallMethod(meta::IndexSequence<Is...>) {
+        auto&& obj = Resolve(meta::Get<0>(args_));
         if constexpr (std::is_pointer_v<
                           std::remove_reference_t<decltype(obj)>>) {
-            return ((*obj).*func_)(Resolve(std::get<Is + 1>(args_))...);
+            return ((*obj).*func_)(Resolve(meta::Get<Is + 1>(args_))...);
         } else {
-            return (obj.*func_)(Resolve(std::get<Is + 1>(args_))...);
+            return (obj.*func_)(Resolve(meta::Get<Is + 1>(args_))...);
         }
     }
 
     template <std::size_t... Is>
-    ResultT CallRegular(std::index_sequence<Is...>) {
-        return func_(Resolve(std::get<Is>(args_))...);
+    ResultT CallRegular(meta::IndexSequence<Is...>) {
+        return func_(Resolve(meta::Get<Is>(args_))...);
     }
 };
 

@@ -3,7 +3,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -216,7 +215,8 @@ TEST(Task, ApplyCreatesDependentTaskFromLambda) {
 
 TEST(Task, ApplyCreatesDependentTaskFromMultiArgumentFunction) {
     scheduler::TTaskScheduler scheduler;
-    auto task = scheduler.Add([] { return std::make_tuple(20, 21, 1); });
+    auto task =
+        scheduler.Add([] { return scheduler::meta::Tuple<int, int, int>(20, 21, 1); });
     auto next = task.Apply(SumThree);
 
     EXPECT_EQ(next.GetResultSync<int>(), 42);
@@ -224,8 +224,8 @@ TEST(Task, ApplyCreatesDependentTaskFromMultiArgumentFunction) {
 
 TEST(Task, ApplyCreatesDependentTaskFromMultiArgumentLambda) {
     scheduler::TTaskScheduler scheduler;
-    auto task =
-        scheduler.Add([] { return std::make_tuple(std::string{"ab"}, 21); });
+    auto task = scheduler.Add(
+        [] { return scheduler::meta::Tuple<std::string, int>(std::string{"ab"}, 21); });
     auto next = task.Apply([](const std::string& prefix, int count) {
         return prefix.size() * count;
     });
