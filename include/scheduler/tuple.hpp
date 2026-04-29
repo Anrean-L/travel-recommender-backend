@@ -125,29 +125,4 @@ struct ListElement<I, TypeList<Ts...>> {
 template <std::size_t I, typename List>
 using ListElementT = typename ListElement<I, List>::Type;
 
-template <typename T>
-T&& Declval() noexcept;
-
-template <typename F, typename... Args>
-auto Invoke(F&& f, Args&&... args)
-    -> decltype(static_cast<F&&>(f)(static_cast<Args&&>(args)...));
-
-template <typename Method, typename Obj, typename... Args>
-auto Invoke(Method method, Obj&& obj, Args&&... args)
-    -> decltype((static_cast<Obj&&>(obj).*
-                 method)(static_cast<Args&&>(args)...));
-
-template <typename Method, typename ObjPtr, typename... Args>
-auto Invoke(Method method, ObjPtr&& obj, Args&&... args)
-    -> decltype(((*static_cast<ObjPtr&&>(obj)).*
-                 method)(static_cast<Args&&>(args)...));
-
-template <typename F, typename... Args>
-struct InvokeResult {
-    using Type = decltype(Invoke(Declval<F>(), Declval<Args>()...));
-};
-
-template <typename F, typename... Args>
-using InvokeResultT = typename InvokeResult<F, Args...>::Type;
-
 }  // namespace scheduler::meta

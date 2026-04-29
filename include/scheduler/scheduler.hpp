@@ -3,11 +3,11 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "scheduler/meta.hpp"
+#include "scheduler/tuple.hpp"
+#include "scheduler/type_traits.hpp"
 
 namespace scheduler {
 
@@ -36,7 +36,7 @@ decltype(auto) Resolve(Arg& arg) {
 template <typename F, typename... Args>
 using InvokeResult = meta::InvokeResultT<F&, typename ArgTraits<Args>::Type...>;
 template <typename F, typename... Args>
-using StoredResult = std::decay_t<InvokeResult<F, Args...>>;
+using StoredResult = meta::DecayT<InvokeResult<F, Args...>>;
 
 template <typename F>
 struct FunctionTraits;
@@ -83,7 +83,7 @@ struct DecayTuple;
 
 template <typename... Ts>
 struct DecayTuple<meta::TypeList<Ts...>> {
-    using Type = meta::Tuple<std::decay_t<Ts>...>;
+    using Type = meta::Tuple<meta::DecayT<Ts>...>;
 };
 
 template <typename F, typename Tuple, std::size_t... Is>
@@ -94,7 +94,7 @@ decltype(auto) CallFromTupleImpl(F&& f, Tuple&& tuple,
 
 template <typename F, typename Tuple>
 decltype(auto) CallFromTuple(F&& f, Tuple&& tuple) {
-    constexpr std::size_t N = std::remove_reference_t<Tuple>::kSize;
+    constexpr std::size_t N = meta::RemoveReferenceT<Tuple>::kSize;
     return CallFromTupleImpl(std::forward<F>(f), std::forward<Tuple>(tuple),
                              meta::MakeIndexSequence<N>{});
 }
@@ -144,8 +144,8 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
    private:
     using ResultT = InvokeResult<F, Args...>;
     using StoredResultT = StoredResult<F, Args...>;
-    using StoredF = std::decay_t<F>;
-    using StoredArgs = meta::Tuple<std::decay_t<Args>...>;
+    using StoredF = meta::DecayT<F>;
+    using StoredArgs = meta::Tuple<meta::DecayT<Args>...>;
 
    public:
     Node(F f, Args... args) : func_(std::move(f)), args_(std::move(args)...) {}
@@ -161,7 +161,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
             throw AccessAfterMove{};
         }
         try {
-            if constexpr (std::is_member_function_pointer_v<StoredF>) {
+            if constexpr (meta::IsMemberFunctionPointerV<StoredF>) {
                 result_ = std::make_unique<StoredResultT>(
                     CallMethod(meta::MakeIndexSequence<sizeof...(Args) - 1>{}));
             } else {
@@ -200,8 +200,7 @@ class Node : public ITypedNode<StoredResult<F, Args...>> {
     template <std::size_t... Is>
     ResultT CallMethod(meta::IndexSequence<Is...>) {
         auto&& obj = Resolve(meta::Get<0>(args_));
-        if constexpr (std::is_pointer_v<
-                          std::remove_reference_t<decltype(obj)>>) {
+        if constexpr (meta::IsPointerV<meta::RemoveReferenceT<decltype(obj)>>) {
             return ((*obj).*func_)(Resolve(meta::Get<Is + 1>(args_))...);
         } else {
             return (obj.*func_)(Resolve(meta::Get<Is + 1>(args_))...);
@@ -220,17 +219,17 @@ class TFuture {
     explicit TFuture(std::shared_ptr<INode> node) : node_(std::move(node)) {}
 
     T Get() {
-        static_assert(!std::is_rvalue_reference_v<T>);
-        static_assert(!std::is_lvalue_reference_v<T> ||
-                      std::is_const_v<std::remove_reference_t<T>>);
+        static_assert(!meta::IsRvalueReferenceV<T>);
+        static_assert(!meta::IsLvalueReferenceV<T> ||
+                      meta::IsConstV<meta::RemoveReferenceT<T>>);
 
-        using StoredT = std::decay_t<T>;
+        using StoredT = meta::DecayT<T>;
         node_->Execute();
         auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
         if (typed_node == nullptr) {
             throw BadTaskType{};
         }
-        if constexpr (std::is_lvalue_reference_v<T>) {
+        if constexpr (meta::IsLvalueReferenceV<T>) {
             return typed_node->GetResultRef();
         } else {
             return typed_node->MoveResult();
@@ -250,11 +249,11 @@ class TTask {
 
     template <typename T>
     T GetResultSync() {
-        static_assert(!std::is_rvalue_reference_v<T>);
-        static_assert(!std::is_lvalue_reference_v<T> ||
-                      std::is_const_v<std::remove_reference_t<T>>);
+        static_assert(!meta::IsRvalueReferenceV<T>);
+        static_assert(!meta::IsLvalueReferenceV<T> ||
+                      meta::IsConstV<meta::RemoveReferenceT<T>>);
 
-        using StoredT = std::decay_t<T>;
+        using StoredT = meta::DecayT<T>;
         node_->Execute();
         auto* typed_node = dynamic_cast<ITypedNode<StoredT>*>(node_.get());
         if (typed_node == nullptr) {
@@ -286,7 +285,7 @@ class TTaskScheduler {
    public:
     template <typename F, typename... Args>
     TTask Add(F&& f, Args&&... args) {
-        using NodeT = Node<std::decay_t<F>, std::decay_t<Args>...>;
+        using NodeT = Node<meta::DecayT<F>, meta::DecayT<Args>...>;
         auto node = std::make_shared<NodeT>(std::forward<F>(f),
                                             std::forward<Args>(args)...);
 
@@ -303,7 +302,7 @@ class TTaskScheduler {
 
 template <typename F>
 TTask TTask::Apply(F&& f) {
-    using Traits = FunctionTraits<std::decay_t<F>>;
+    using Traits = FunctionTraits<meta::DecayT<F>>;
     if constexpr (Traits::kArity == 1) {
         using Arg = typename Traits::template Arg<0>;
         return scheduler_->Add(std::forward<F>(f), GetFutureResult<Arg>());
@@ -321,7 +320,7 @@ TTask TTask::Apply(F&& f) {
 
 template <typename Method, typename Obj>
 TTask TTask::Apply(Method&& method, Obj&& obj) {
-    using Arg = typename FunctionTraits<std::decay_t<Method>>::template Arg<0>;
+    using Arg = typename FunctionTraits<meta::DecayT<Method>>::template Arg<0>;
     return scheduler_->Add(std::forward<Method>(method), std::forward<Obj>(obj),
                            GetFutureResult<Arg>());
 }
