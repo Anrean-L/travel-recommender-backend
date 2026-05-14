@@ -1,0 +1,9 @@
+build
+CMakePresets.json
+.git
+.vscode
+.idea
+.env
+.gitignore
+.clangd
+README.md
