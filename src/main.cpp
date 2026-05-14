@@ -31,7 +31,7 @@ int main() {
     app::PlacesClient places_client(overpass_client);
     app::RoutingClient routing_client(ors_client, config->ors_api_key);
 
-    app::RunServer(8080, weather_client, places_client, routing_client,
+    app::RunServer(config->port, weather_client, places_client, routing_client,
                    geolocation_client);
 
     return 0;
