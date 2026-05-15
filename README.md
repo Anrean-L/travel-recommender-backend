@@ -214,7 +214,7 @@ cmake --build build --config Release
 ### Run
 
 ```bash
-ORS_API_KEY=your_key TWOIP_API_KEY=your_key ./build/travel-recommender-backend
+ORS_API_KEY=your_key TWOIP_API_KEY=your_key ./build/src/app
 ```
 
 On Windows PowerShell:
@@ -222,7 +222,7 @@ On Windows PowerShell:
 ```powershell
 $env:ORS_API_KEY="your_key"
 $env:TWOIP_API_KEY="your_key"
-.\build\travel-recommender-backend.exe
+.\build\src\app.exe
 ```
 
 Then check:
