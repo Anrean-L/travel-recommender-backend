@@ -1,190 +1,291 @@
-# Лабораторная работа 9
+# Travel Recommender Backend
 
-Планировщик задач
+C++ backend service for recommending nearby places based on user's location, current weather and walking distance.
 
-## Задача
+The project was built as a practical application for a custom task scheduler.  
+The backend constructs a dependency graph of computations, fetches data from external APIs, scores nearby places and returns a ranked list of recommendations.
 
-Вашей задачей будет разработать класс, отвечающий за выполнение задач и выставление взаимосвязей между ними (фактически это класс для построения [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph)). 
+## Features
 
-Для 1 и 2 потока также необходимо будет реализовать приложение, рекомендующее места отдыха в зависимости от местоположения и погодных условий.
+- Location-based recommendations
+- Weather-aware scoring
+- Walking distance and duration calculation
+- OpenStreetMap places search
+- Route matrix optimization for faster distance requests
+- In-memory HTTP cache
+- Docker-ready deployment
+- Custom C++ task scheduler used in the recommendation pipeline
 
-Часто, чтобы решить какую-либо задачу, требуется выполнить граф вычислений, где узел графа — это задача, а ребро — связь между результатом выполнения одной задачи и параметром для запуска другой. Вам предстоит разработать класс **TTaskScheduler**, решающий подобную задачу.
+## Tech Stack
 
-Такой класс помогает понятно разбить задачу по этапам и построить взаимосвязь между этапами исполнения.
+- C++23
+- CMake
+- cpp-httplib
+- nlohmann/json
+- OpenSSL
+- Docker
 
-Допустим, существует задача: посчитать средний балл в группах. На вход подаются 2 [csv](https://en.wikipedia.org/wiki/Comma-separated_values) файла: `(isu, gpa)` и `(group, isu)`
+External APIs:
 
-Вот так мог бы выглядеть код для решения данной задачи с помощью TTaskScheduler
+- Open-Meteo — current weather
+- Overpass API — nearby places from OpenStreetMap
+- openrouteservice — walking distances and durations
+- 2IP — fallback IP-based geolocation
 
-```cpp
+## Architecture
 
-TTaskScheduler scheduler;
+The backend is split into several layers:
 
-auto students = scheduler.add(
-    [](const std::string& filePath) {
-        std::ifstream file(filePath);
-        std::string line;
-        std::getline(file, line); // skip header
-
-        std::unordered_map<int, int> gpaByIsu;
-        while (std::getline(file, line)) {
-            int isu, gpa;
-            std::sscanf(line.c_str(), "%d,%d", &isu, &gpa);
-            gpaByIsu[isu] = gpa;
-        }
-        return gpaByIsu;
-    },
-    "students.csv"
-);
-
-auto groups = scheduler.add(
-    [](const std::string& filePath) {
-        std::ifstream file(filePath);
-        std::string line;
-        std::getline(file, line); // skip header
-
-        std::unordered_map<std::string, std::vector<int>> groupToIsus;
-        while (std::getline(file, line)) {
-            std::stringstream ss(line);
-            std::string group;
-            int isu;
-            std::getline(ss, group, ',');
-            ss >> isu;
-            groupToIsus[group].push_back(isu);
-        }
-        return groupToIsus;
-    },
-    "groups.csv"
-);
-
-// Берём ссылку: таких future result можно получить много раз
-auto studentsFuture =
-    students.getFutureResult<const std::unordered_map<int, int>&>();
-// Берём значение, ожидаем только move, никаких copy, соответственно get можно вызвать единожды
-auto groupsFuture =
-    groups.getFutureResult<std::unordered_map<std::string, std::vector<int>>>();
-
-auto groupGpa = scheduler.add(
-    [](
-        const std::unordered_map<int, int>& gpaByIsu,
-        std::unordered_map<std::string, std::vector<int>> groupToIsus // ждём, что нам мувнут
-    ) {
-        std::unordered_map<std::string, int> gpaByGroup;
-        for (const auto& [group, isus] : groupToIsus) {
-            int sum = 0, cnt = 0;
-            for (const int isu : isus) {
-                auto it = gpaByIsu.find(isu);
-                if (it != gpaByIsu.end()) {
-                    sum += it->second;
-                    ++cnt;
-                }
-            }
-            if (cnt != 0) {
-                gpaByGroup[group] = sum / cnt;
-            }
-        }
-        return gpaByGroup;
-    },
-    studentsFuture,
-    groupsFuture
-);
-
-groupGpa.apply(
-    [](std::unordered_map<std::string, int>&& gpaByGroup) {
-        for (const auto& [group, gpa] : gpaByGroup) {
-            std::cout << group << ": " << gpa << "\n";
-        }
-    }
-);
-
-scheduler.executeAll();
-
-// Так делать нельзя, потому что уже мувнули, ожидаем exception
-// groupsFuture.get()
-
-// Так можно
-const std::unordered_map<int, int>& gpaByIsu = studentsFuture.get();
-
+```text
+HTTP Server
+   |
+Recommendation Service
+   |
+Custom Task Scheduler
+   |
+API Clients
+   |
+External APIs
 ```
 
-### Публичный интерфейс `TTaskScheduler`
+Main modules:
 
- - **add** &mdash; принимает в качестве аргумента задание и его аргументы. Возвращает объект `TTask`, описывающий добавленную таску.
- - **executeAll** &mdash; выполняет все запланированные задания
- 
-### Публичный интерфейс `TTask`
- - **getResultSync<T>** &mdash; возвращает результат выполнения задания определённого типа. Вычисляет его, если он ещё не вычислен; при этом не происходит вычисления ненужных заданий
- - **getFutureResult<T>** &mdash; возвращает объект, из которого в будущем можно получить результат задания (фактически ничего не вычисляя), с типом результата T
- 
-    Если просят T, то ожидается, что объект "переместим".
-    Очевидно, что результат future можно "переместить" только единожды, поэтому при последующих обращениях стоит выбрасывать исключение.
+```text
+scheduler/
+  Custom DAG-based task scheduler
 
-    Если просят `cv T&`, то отдаём соответствующую ссылку.
-    Также очевидно, что таких ссылок можно получить любое количество.
- - **apply** &mdash; принимает в качестве аргумента задание. Возвращает объект `TTask`. 
- 
-    Аргументы для задания передаются от предыдущего задания (см. [Требования и ограничения к заданиям](#требования-и-ограничения-к-заданиям))
-    
-    Также apply может принимать как по rvalue, так и по lvalue ссылке.
+api/
+  HTTP client abstraction and external API clients
 
-### Публичный интерфейс `TFuture`
- - Реализуется на ваше усмотрение; главное, что в зависимости от способа создания этой TFuture (см. выше getFutureResult) выполняется перемещение или берется ссылка.
+app/
+  Domain models, recommendation pipeline and scoring logic
 
-### Требования и ограничения к заданиям
+server/
+  HTTP endpoints and request handling
+```
 
-  - [Callable object](https://en.cppreference.com/w/cpp/named_req/Callable)
-  - Количество аргументов &mdash; любое.
-  - Задание может быть указателем на метод класса. В таком случае первый аргумент — объект класса, у которого будет вызван метод.
-  - `task.apply(func)` может быть применено только тогда, если `func` принимает ровно один аргумент
-  
-    По желанию можно реализовать `apply` для `func` от любого числа аргументов. Это возможно, например, если `task` возвращает `std::tuple<Ts...>`
+## Custom Task Scheduler
 
+The project includes a custom `TTaskScheduler` implementation.
 
-## Приложение для рекомендаций (только 1 и 2 поток)
+It supports:
 
-Используя реализованный вами TTaskScheduler, необходимо написать приложение, которое:
-1. Узнает ваше местоположение
-2. По местоположению:
-    - Определит погоду
-    - Найдёт все интересные места рядом: музеи, парки, рестораны и т. д. (на ваше усмотрение)
-3. Основываясь на погоде выберет интересные места (нелогично рекомендовать гулять по парку, если будет ливень)
-4. Выведет краткую сводку про погоду и N мест, куда рекомендуется сходить, и расстояние до них
+- adding tasks with arbitrary callable objects;
+- lazy execution of individual tasks;
+- execution of the whole task graph;
+- future-like task results;
+- task composition with `Apply`;
+- member function pointers;
+- cycle detection;
+- move-aware result access.
 
-Можно выбрать любые API; вот те, что уже подобрали для вас:
-1. [2ip](https://2ip.ru/free/) &mdash; для определения долготы и широты по IP-адресу
-2. [Яндекс.Погода](https://yandex.ru/dev/weather/#start)
-3. [Поиск по Яндекс.Картам](https://yandex.ru/maps-api/docs/geosearch-api/index.html)
-4. [Матрицы расстояний](https://yandex.ru/maps-api/docs/distancematrix-api/index.html) или [Получение деталей маршрута](https://yandex.ru/maps-api/docs/router-api/index.html)
+The recommendation pipeline is built as a graph of dependent tasks:
 
-## Ограничения
+```text
+location
+   ├── weather
+   └── places
+          |
+      scored places
+          |
+      top candidates
+          |
+      walking routes
+          |
+      reranked places
+          |
+      final response
+```
 
- Запрещено использовать стандартную библиотеку, за исключением [контейнеров](https://en.cppreference.com/w/cpp/container) и [умных указателей](https://en.cppreference.com/w/cpp/memory).
+This makes the project demonstrate the scheduler not only in unit tests, but also in a real backend scenario.
 
-## Тесты
+## API
 
-Код библиотеки должен быть покрыт тестами. Тесты являются частью задания. Качество написанных тестов и покрытие кода тестами влияют на итоговую оценку.
+### Health check
 
-## NB
+```http
+GET /health
+```
 
-1. В данной работе могут быть использованы идеи [Type Erasure](https://en.wikibooks.org/wiki/More_C%2B%2B_Idioms/Type_Erasure), которые мы разбирали на лекции
-2. Мы поговорили с вами про std::forward, подумайте над тем, где это может быть применимо в данной задаче
-3. Получаемые расписания не всегда могут быть выполнимы; предлагается подумать, что делать в таких ситуациях
-4. Качество рекомендации не является частью оценки. Главное, что от вас ожидается &mdash; применение вашей библиотеки в реальном сценарии.
-5. Для упрощения парсинга json обратите внимание на [макросы в библиотеке nlohmann](https://json.nlohmann.me/features/arbitrary_types/#simplify-your-life-with-macros)
-6. Также, при желании, некоторые задания можно выполнять [асинхронно](https://www.geeksforgeeks.org/javascript/synchronous-and-asynchronous-programming/) (NB: это не является частью задания).
+Response:
 
-## ТеорМин
+```text
+OK
+```
 
-1. Value categories
-2. RValue reference
-3. Move Semantics
-4. Perfect Forwarding
-5. Variadic templates
+### Get recommendations
 
-## Deadline
+```http
+GET /recommend
+```
 
-1. 29.04.26 23:59 0.8
-2. 06.05.26 23:59 0.65
-3. 13.05.26 23:59 0.5
+Query parameters:
 
-Максимальное количество баллов — 12
+| Parameter     |   Type | Required | Description                        |
+| ------------- | -----: | -------: | ---------------------------------- |
+| `lat`         | number |       no | User latitude                      |
+| `lon`         | number |       no | User longitude                     |
+| `radius_m`    | number |       no | Search radius in meters            |
+| `max_results` | number |       no | Maximum number of places to return |
+
+If `lat` and `lon` are not provided, the server tries to use IP-based geolocation.
+
+Example:
+
+```bash
+curl "http://localhost:8080/recommend?lat=59.93&lon=30.3351&radius_m=1000&max_results=10"
+```
+
+Example response shape:
+
+```json
+{
+  "location": {
+    "lat": 59.93,
+    "lon": 30.3351
+  },
+  "weather": {
+    "temperature": 15,
+    "apparent_temperature": 10,
+    "relative_humidity": 77,
+    "rain": 0,
+    "snowfall": 0,
+    "wind_speed": 17,
+    "wind_gusts": 28,
+    "wind_direction": 135,
+    "weather_code": 3,
+    "cloud_cover": 100,
+    "is_day": true,
+    "mood": "okay",
+    "description": "Overcast"
+  },
+  "places": [
+    {
+      "place": {
+        "name": "Example place",
+        "kind": "park",
+        "environment": "outdoor",
+        "coords": {
+          "lat": 59.93,
+          "lon": 30.33
+        },
+        "osm_type": "node",
+        "osm_id": 123456,
+        "address": "",
+        "website": "",
+        "opening_hours": ""
+      },
+      "score": 82.5,
+      "straight_distance_m": 300,
+      "route_distance_m": 376,
+      "walk_time_min": 5,
+      "reason": "Great outdoor option for current weather"
+    }
+  ]
+}
+```
+
+## Environment Variables
+
+The server requires API keys for some external services:
+
+```env
+ORS_API_KEY=your_openrouteservice_key
+TWO_IP_API_KEY=your_2ip_key
+```
+
+Optional:
+
+```env
+PORT=8080
+```
+
+If `PORT` is not set, the server uses the default port.
+
+## Running Locally
+
+### Build
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+### Run
+
+```bash
+ORS_API_KEY=your_key TWOIP_API_KEY=your_key ./build/travel-recommender-backend
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:ORS_API_KEY="your_key"
+$env:TWOIP_API_KEY="your_key"
+.\build\travel-recommender-backend.exe
+```
+
+Then check:
+
+```bash
+curl http://localhost:8080/health
+```
+
+## Running with Docker
+
+Build image:
+
+```bash
+docker build -t travel-recommender-backend .
+```
+
+Run container:
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -e PORT=8080 \
+  -e ORS_API_KEY=your_key \
+  -e TWOIP_API_KEY=your_key \
+  travel-recommender-backend
+```
+
+PowerShell:
+
+```powershell
+docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWOIP_API_KEY="your_key" travel-recommender-backend
+```
+
+## Deployment
+
+The backend is containerized and can be deployed to platforms that support Docker images.
+
+Important deployment requirements:
+
+- the server must listen on `0.0.0.0`;
+- the port should be read from the `PORT` environment variable;
+- API keys should be configured as environment variables;
+- frontend URL should be allowed by CORS if strict CORS configuration is used.
+
+## Recommendation Logic
+
+The scoring model is heuristic-based.
+
+It takes into account:
+
+- place category;
+- indoor/outdoor suitability;
+- current weather mood;
+- cloud cover;
+- walking distance;
+- walking duration;
+- diversity of place categories.
+
+The backend first selects a diverse set of candidates, then requests walking route information only for those candidates.
+This avoids unnecessary routing API calls and makes the service significantly faster.
+
+## Notes
+
+- Place data comes from OpenStreetMap, so some fields such as address, website or opening hours may be missing.
+- If device coordinates are not provided, IP-based geolocation can be inaccurate, especially when using a VPN.
+- External APIs may rate-limit requests, so the backend uses HTTP caching where possible.
