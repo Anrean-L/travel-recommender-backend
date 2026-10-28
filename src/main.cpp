@@ -18,8 +18,8 @@ int main() {
     }
     app::HttplibHttpClient two_ip_client("api.2ip.io", 32,
                                          std::chrono::hours(12));
-    app::HttplibHttpClient open_meteo_client("api.open-meteo.com", 64,
-                                             std::chrono::minutes(10));
+    app::HttplibHttpClient openweather_client("api.openweathermap.org", 64,
+                                              std::chrono::minutes(10));
     app::HttplibHttpClient geoapify_client("api.geoapify.com", 64,
                                            std::chrono::hours(2));
     app::HttplibHttpClient ors_client("api.openrouteservice.org", 512,
@@ -27,7 +27,8 @@ int main() {
 
     app::GeolocationClient geolocation_client(two_ip_client,
                                               config->two_ip_api_key);
-    app::WeatherClient weather_client(open_meteo_client);
+    app::WeatherClient weather_client(openweather_client,
+                                      config->openweather_api_key);
     app::PlacesClient places_client(geoapify_client, config->geoapify_key);
     app::RoutingClient routing_client(ors_client, config->ors_api_key);
 

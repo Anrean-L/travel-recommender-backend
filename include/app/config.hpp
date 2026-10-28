@@ -18,6 +18,7 @@ struct Config {
     std::string ors_api_key;
     int port;
     std::string geoapify_key;
+    std::string openweather_api_key;
 };
 
 std::expected<Config, std::string> LoadConfig();

@@ -1,5 +1,7 @@
 #pragma once
 #include <expected>
+#include <string>
+#include <utility>
 
 #include "app/domain.hpp"
 #include "http_client.hpp"
@@ -8,7 +10,8 @@ namespace app {
 
 class WeatherClient {
    public:
-    explicit WeatherClient(IHttpClient& client) : client_(client) {}
+    WeatherClient(IHttpClient& client, std::string api_key)
+        : client_(client), api_key_(std::move(api_key)) {}
 
     std::expected<WeatherInfo, std::string> FetchWeather(
         const Coordinates& coords);
@@ -18,6 +21,7 @@ class WeatherClient {
         const std::string& body);
 
     IHttpClient& client_;
+    std::string api_key_;
 };
 
 }  // namespace app

@@ -27,7 +27,7 @@ The backend constructs a dependency graph of computations, fetches data from ext
 
 External APIs:
 
-- Open-Meteo — current weather
+- [OpenWeather Current Weather API](https://openweathermap.org/api/current) — current weather
 - [Geoapify Places API](https://apidocs.geoapify.com/docs/places/) — nearby places based on OpenStreetMap data
 - openrouteservice — walking distances and durations
 - 2IP — fallback IP-based geolocation
@@ -193,6 +193,7 @@ The server requires API keys for some external services:
 ORS_API_KEY=your_openrouteservice_key
 TWO_IP_API_KEY=your_2ip_key
 GEOAPIFY_KEY=your_geoapify_key
+OPENWEATHER_API_KEY=your_openweather_key
 ```
 
 Optional:
@@ -207,7 +208,10 @@ If `PORT` is not set, the server uses port `8080`.
 [Geoapify MyProjects](https://myprojects.geoapify.com/). The key is sent to
 `api.geoapify.com`; it is not included in responses or request logs.
 `ORS_API_KEY` is used for walking routes, and `TWO_IP_API_KEY` for IP geolocation.
-All three keys are required at startup, including when coordinates are provided.
+`OPENWEATHER_API_KEY` is used for current weather from OpenWeather.
+`OPEN_WEATHER_API_KEY` is also accepted; `OPENWEATHER_API_KEY` takes precedence
+when both are set.
+All four keys are required at startup, including when coordinates are provided.
 
 ## Running Locally
 
@@ -235,7 +239,7 @@ The application reads process environment variables; it does not load `.env`
 automatically. Alternatively, provide the variables directly:
 
 ```bash
-ORS_API_KEY=your_ors_key TWO_IP_API_KEY=your_2ip_key GEOAPIFY_KEY=your_geoapify_key ./build/src/app
+ORS_API_KEY=your_ors_key TWO_IP_API_KEY=your_2ip_key GEOAPIFY_KEY=your_geoapify_key OPENWEATHER_API_KEY=your_openweather_key ./build/src/app
 ```
 
 On Windows PowerShell:
@@ -244,6 +248,7 @@ On Windows PowerShell:
 $env:ORS_API_KEY="your_key"
 $env:TWO_IP_API_KEY="your_key"
 $env:GEOAPIFY_KEY="your_geoapify_key"
+$env:OPENWEATHER_API_KEY="your_openweather_key"
 .\build\src\app.exe
 ```
 
@@ -270,13 +275,14 @@ docker run --rm \
   -e ORS_API_KEY=your_key \
   -e TWO_IP_API_KEY=your_key \
   -e GEOAPIFY_KEY=your_geoapify_key \
+  -e OPENWEATHER_API_KEY=your_openweather_key \
   travel-recommender-backend
 ```
 
 PowerShell:
 
 ```powershell
-docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWO_IP_API_KEY="your_key" -e GEOAPIFY_KEY="your_geoapify_key" travel-recommender-backend
+docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWO_IP_API_KEY="your_key" -e GEOAPIFY_KEY="your_geoapify_key" -e OPENWEATHER_API_KEY="your_openweather_key" travel-recommender-backend
 ```
 
 ## Deployment
@@ -303,6 +309,23 @@ It takes into account:
 - walking distance;
 - walking duration;
 - diversity of place categories.
+
+Weather is fetched from `https://api.openweathermap.org/data/2.5/weather` using
+`lat`, `lon`, `appid`, and `units=metric`. Use the standard Current Weather API;
+no One Call subscription is needed. Create a key in your
+[OpenWeather account](https://home.openweathermap.org/api_keys) and set
+`OPENWEATHER_API_KEY` in the backend environment (including on Render).
+Do not put it in frontend `VITE_*` variables.
+
+The response fields used by the frontend are preserved. Temperatures are Celsius,
+wind speed and gusts are converted from m/s to km/h, and rain is mm/h.
+Snow water equivalent is converted to estimated snow depth in cm using a 7:1
+snow/water ratio to retain the existing scoring thresholds. Missing rain/snow
+values mean zero; missing gusts fall back to wind speed. Day/night comes from
+the weather icon suffix; the description comes from OpenWeather. The internal
+`weather_code` now contains an OpenWeather condition ID (not a WMO code).
+Successful weather responses are cached in memory for ten minutes. Provider
+errors include the service name and HTTP status, without exposing the API key.
 
 Nearby places are fetched from `https://api.geoapify.com/v2/places` using a
 `circle:longitude,latitude,radius` filter and proximity sorting. A single request

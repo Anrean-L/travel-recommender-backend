@@ -108,11 +108,10 @@ TEST(GeolocationClient, FetchCoordinatesAcceptsNumericAndMixedFormats) {
 TEST(GeolocationClient, FetchCoordinatesRejectsMalformedAndNonFiniteValues) {
     FakeHttpClient http_client;
     app::GeolocationClient client(http_client, "secret-token");
-    for (const auto* body : {R"({"lat":"nan","lon":30})",
-                             R"({"lat":59,"lon":"inf"})",
-                             R"({"lat":"59junk","lon":30})",
-                             R"({"lat":null,"lon":30})",
-                             R"({"lat":91,"lon":30})"}) {
+    for (const auto* body :
+         {R"({"lat":"nan","lon":30})", R"({"lat":59,"lon":"inf"})",
+          R"({"lat":"59junk","lon":30})", R"({"lat":null,"lon":30})",
+          R"({"lat":91,"lon":30})"}) {
         http_client.get_response = {200, body};
         EXPECT_FALSE(client.FetchCoordinates("8.8.8.8").has_value());
     }
@@ -129,53 +128,77 @@ TEST(GeolocationClient, FetchCoordinatesRejectsCoordinatesOutsideWorldBounds) {
     EXPECT_EQ(result.error(), "Invalid coordinates are received");
 }
 
-TEST(WeatherClient, FetchWeatherBuildsForecastRequestAndMapsWeatherFields) {
-    FakeHttpClient http_client;
-    http_client.get_response = {200,
-                                R"({
-            "current": {
-                "temperature_2m": 21.5,
-                "apparent_temperature": 22.0,
-                "relative_humidity_2m": 48.0,
-                "rain": 0.0,
-                "snowfall": 0.0,
-                "wind_speed_10m": 12.0,
-                "wind_gusts_10m": 18.0,
-                "wind_direction_10m": 240,
-                "weather_code": 0,
-                "is_day": 0,
-                "cloud_cover": 15
-            }
-        })"};
-
-    app::WeatherClient client(http_client);
-    const auto result = client.FetchWeather({59.9386, 30.3141});
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(http_client.last_get_path, "/v1/forecast");
-    ASSERT_NE(FindParam(http_client.last_get_params, "latitude"), nullptr);
-    ASSERT_NE(FindParam(http_client.last_get_params, "longitude"), nullptr);
-    ASSERT_NE(FindParam(http_client.last_get_params, "current"), nullptr);
-    ASSERT_NE(FindParam(http_client.last_get_params, "timezone"), nullptr);
-    EXPECT_EQ(FindParam(http_client.last_get_params, "timezone")->value,
-              "auto");
+TEST(WeatherClient, BuildsOpenWeatherRequestAndConvertsUnits) {
+    FakeHttpClient http;
+    http.get_response = {200, R"({
+        "main":{"temp":21.5,"feels_like":22.0,"humidity":48},
+        "wind":{"speed":3.0,"gust":5.0,"deg":240},
+        "rain":{"1h":1.2}, "snow":{"1h":0.5},
+        "clouds":{"all":15},
+        "weather":[{"id":601,"icon":"13n","description":"snow"}]
+    })"};
+    app::WeatherClient client(http, "weather-key");
+    auto result = client.FetchWeather({59.9386, 30.3141});
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_EQ(http.last_get_path, "/data/2.5/weather");
+    for (const auto* key : {"lat", "lon", "appid", "units"})
+        ASSERT_NE(FindParam(http.last_get_params, key), nullptr);
+    EXPECT_EQ(FindParam(http.last_get_params, "appid")->value, "weather-key");
+    EXPECT_EQ(FindParam(http.last_get_params, "units")->value, "metric");
+    EXPECT_EQ(FindParam(http.last_get_params, "lat")->value, "59.938600");
+    EXPECT_EQ(FindParam(http.last_get_params, "lon")->value, "30.314100");
     EXPECT_DOUBLE_EQ(result->temperature, 21.5);
-    EXPECT_EQ(result->weather_code, 0);
+    EXPECT_DOUBLE_EQ(result->apparent_temperature, 22.0);
+    EXPECT_DOUBLE_EQ(result->relative_humidity, 48.0);
+    EXPECT_DOUBLE_EQ(result->rain, 1.2);
+    EXPECT_DOUBLE_EQ(result->snowfall, 0.35);
+    EXPECT_DOUBLE_EQ(result->wind_speed, 10.8);
+    EXPECT_DOUBLE_EQ(result->wind_gusts, 18.0);
+    EXPECT_EQ(result->wind_direction, 240);
+    EXPECT_EQ(result->cloud_cover, 15);
+    EXPECT_EQ(result->weather_code, 601);
     EXPECT_FALSE(result->is_day);
-    EXPECT_EQ(result->description, "Clear sky");
+    EXPECT_EQ(result->description, "snow");
+    EXPECT_EQ(result->mood, app::WeatherMood::kBad);
+}
+
+TEST(WeatherClient, HandlesMissingPrecipitationAndGusts) {
+    FakeHttpClient http;
+    http.get_response = {200, R"({
+        "main":{"temp":21,"feels_like":22,"humidity":48},
+        "wind":{"speed":2}, "clouds":{"all":0},
+        "weather":[{"id":800,"icon":"01d","description":"clear sky"}]
+    })"};
+    app::WeatherClient client(http, "weather-key");
+    auto result = client.FetchWeather({59.9, 30.3});
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->is_day);
+    EXPECT_DOUBLE_EQ(result->rain, 0);
+    EXPECT_DOUBLE_EQ(result->snowfall, 0);
+    EXPECT_DOUBLE_EQ(result->wind_gusts, result->wind_speed);
     EXPECT_EQ(result->mood, app::WeatherMood::kGreatOutdoor);
 }
 
 TEST(WeatherClient, FetchWeatherReturnsParseErrorForMalformedJson) {
-    FakeHttpClient http_client;
-    http_client.get_response = {200, R"({"current":42})"};
+    FakeHttpClient http;
+    app::WeatherClient client(http, "weather-key");
+    for (const auto* body : {"not json", R"({"main":42})",
+                             R"({"main":{},"wind":{},"weather":[]})"}) {
+        http.get_response = {200, body};
+        auto result = client.FetchWeather({59.9, 30.3});
+        ASSERT_FALSE(result.has_value());
+        EXPECT_NE(result.error().find("Failed to parse weather response: "),
+                  std::string::npos);
+    }
+}
 
-    app::WeatherClient client(http_client);
-    const auto result = client.FetchWeather({59.9386, 30.3141});
-
+TEST(WeatherClient, ReportsProviderStatusWithoutExposingKey) {
+    FakeHttpClient http;
+    http.get_response = {429, "secret-token"};
+    app::WeatherClient client(http, "secret-token");
+    auto result = client.FetchWeather({59.9, 30.3});
     ASSERT_FALSE(result.has_value());
-    EXPECT_NE(result.error().find("Failed to parse weather response: "),
-              std::string::npos);
+    EXPECT_EQ(result.error(), "OpenWeather API returned status 429");
 }
 
 TEST(PlacesClient, FetchPlacesBuildsGeoapifyRequestAndParsesDetails) {

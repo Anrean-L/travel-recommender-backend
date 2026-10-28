@@ -18,6 +18,11 @@ std::expected<std::string, std::string> GetEnv(std::string_view key) {
 std::expected<Config, std::string> LoadConfig() {
     auto ip2_api_key = GetEnv("TWO_IP_API_KEY");
     auto ors_api_key = GetEnv("ORS_API_KEY");
+    auto openweather_api_key = GetEnv("OPENWEATHER_API_KEY");
+    if (!openweather_api_key) {
+        auto alternate = GetEnv("OPEN_WEATHER_API_KEY");
+        if (alternate) openweather_api_key = std::move(alternate);
+    }
     auto port = GetEnv("PORT");
     auto geoapify_key = GetEnv("GEOAPIFY_KEY");
     if (!ip2_api_key) {
@@ -29,6 +34,9 @@ std::expected<Config, std::string> LoadConfig() {
     if (!geoapify_key) {
         return std::unexpected(geoapify_key.error());
     }
+    if (!openweather_api_key) {
+        return std::unexpected(openweather_api_key.error());
+    }
     int parsed_port = 8080;
     try {
         if (port) parsed_port = std::stoi(*port);
@@ -36,10 +44,11 @@ std::expected<Config, std::string> LoadConfig() {
         parsed_port = 8080;
     }
     return Config{
-        *ip2_api_key,
-        *ors_api_key,
-        parsed_port,
-        *geoapify_key,
+        .two_ip_api_key = *ip2_api_key,
+        .ors_api_key = *ors_api_key,
+        .port = parsed_port,
+        .geoapify_key = *geoapify_key,
+        .openweather_api_key = *openweather_api_key,
     };
 }
 

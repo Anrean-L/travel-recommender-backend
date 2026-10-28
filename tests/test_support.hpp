@@ -57,7 +57,7 @@ class ScenarioHttpClient final : public app::IHttpClient {
                           const app::QueryParams& params = {}) override {
         get_requests.push_back({path, params});
 
-        if (path == "/v1/forecast") {
+        if (path == "/data/2.5/weather") {
             ++weather_calls;
             return weather_response;
         }
@@ -126,19 +126,19 @@ inline app::HttpResponse MakeGeolocationResponse(double lat, double lon) {
 inline app::HttpResponse MakeWeatherResponse(
     double rain, bool is_day, double temperature = 20.0,
     double apparent_temperature = 20.0) {
-    return {200, json{{"current",
-                       {{"temperature_2m", temperature},
-                        {"apparent_temperature", apparent_temperature},
-                        {"relative_humidity_2m", 55.0},
-                        {"rain", rain},
-                        {"snowfall", 0.0},
-                        {"wind_speed_10m", 8.0},
-                        {"wind_gusts_10m", 12.0},
-                        {"wind_direction_10m", 180},
-                        {"weather_code", 0},
-                        {"is_day", is_day ? 1 : 0},
-                        {"cloud_cover", 20}}}}
-                     .dump()};
+    return {200,
+            json{{"main",
+                  {{"temp", temperature},
+                   {"feels_like", apparent_temperature},
+                   {"humidity", 55}}},
+                 {"wind",
+                  {{"speed", 8.0 / 3.6}, {"gust", 12.0 / 3.6}, {"deg", 180}}},
+                 {"rain", {{"1h", rain}}},
+                 {"clouds", {{"all", 20}}},
+                 {"weather", json::array({{{"id", 800},
+                                           {"icon", is_day ? "01d" : "01n"},
+                                           {"description", "clear sky"}}})}}
+                .dump()};
 }
 
 inline app::HttpResponse MakeRouteResponse(double distance_m,

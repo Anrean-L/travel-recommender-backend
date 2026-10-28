@@ -24,7 +24,7 @@ TEST(Recommendation, BuildRecommendationsSkipsGeolocationWhenCoordsProvided) {
              test_support::MakePlaceElement(2, "Museum One", "restaurant",
                                             59.9400, 30.3160)}));
 
-    app::WeatherClient weather_client(http_client);
+    app::WeatherClient weather_client(http_client, "weather-key");
     app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
@@ -76,7 +76,7 @@ TEST(Recommendation, BuildRecommendationsUsesGeolocationAndDiversifiesKinds) {
              test_support::MakePlaceElement(7, "Cafe 2", "cafe", 59.9393,
                                             30.3148)}));
 
-    app::WeatherClient weather_client(http_client);
+    app::WeatherClient weather_client(http_client, "weather-key");
     app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
@@ -119,7 +119,7 @@ TEST(Recommendation, BuildRecommendationsReturnsClientFailureMessage) {
     http_client.places_response =
         test_support::MakePlacesResponse(test_support::json::array());
 
-    app::WeatherClient weather_client(http_client);
+    app::WeatherClient weather_client(http_client, "weather-key");
     app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
