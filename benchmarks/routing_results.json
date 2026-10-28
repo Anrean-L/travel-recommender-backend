@@ -1,0 +1,152 @@
+{
+  "baseline_commit": "d1cb19b",
+  "cache_enabled": false,
+  "fixture": "benchmarks/places_spb.json",
+  "interval_ms": 1600,
+  "repeats": 3,
+  "scenarios": [
+    {
+      "matrix_median_ms": 511.8667090000001,
+      "places": 10,
+      "sequential_median_ms": 5073.166998999999,
+      "speedup": 9.911109493545903,
+      "trials": [
+        {
+          "matrix": {
+            "latency_ms": 511.8667090000001,
+            "pacing_ms": 1286.775643,
+            "requests": 1,
+            "response_bytes": 1566,
+            "wall_ms": 1798.642352
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 4279.523607000001,
+            "pacing_ms": 10434.602234999998,
+            "requests": 10,
+            "response_bytes": 19920,
+            "wall_ms": 14714.125842
+          }
+        },
+        {
+          "matrix": {
+            "latency_ms": 476.49811499999987,
+            "pacing_ms": 1088.192352,
+            "requests": 1,
+            "response_bytes": 1566,
+            "wall_ms": 1564.690467
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 6212.414570999999,
+            "pacing_ms": 10493.874428000001,
+            "requests": 10,
+            "response_bytes": 19920,
+            "wall_ms": 16706.288999
+          }
+        },
+        {
+          "matrix": {
+            "latency_ms": 525.7199459999999,
+            "pacing_ms": 1108.223399,
+            "requests": 1,
+            "response_bytes": 1566,
+            "wall_ms": 1633.943345
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 5073.166998999999,
+            "pacing_ms": 10269.473522,
+            "requests": 10,
+            "response_bytes": 19920,
+            "wall_ms": 15342.640521
+          }
+        }
+      ],
+      "complete": true
+    },
+    {
+      "matrix_median_ms": 508.60990200000015,
+      "places": 20,
+      "sequential_median_ms": 8977.548837999999,
+      "speedup": 17.651148360851213,
+      "trials": [
+        {
+          "matrix": {
+            "latency_ms": 508.60990200000015,
+            "pacing_ms": 1183.494765,
+            "requests": 1,
+            "response_bytes": 2580,
+            "wall_ms": 1692.104667
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 9095.239967999998,
+            "pacing_ms": 22797.133644,
+            "requests": 20,
+            "response_bytes": 38142,
+            "wall_ms": 31892.373612
+          }
+        },
+        {
+          "matrix": {
+            "latency_ms": 514.5306400000002,
+            "pacing_ms": 1091.474102,
+            "requests": 1,
+            "response_bytes": 2580,
+            "wall_ms": 1606.004742
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 8977.548837999999,
+            "pacing_ms": 22890.047201,
+            "requests": 20,
+            "response_bytes": 38142,
+            "wall_ms": 31867.596039
+          }
+        },
+        {
+          "matrix": {
+            "latency_ms": 501.418314,
+            "pacing_ms": 1159.8652,
+            "requests": 1,
+            "response_bytes": 2580,
+            "wall_ms": 1661.283514
+          },
+          "max_distance_delta_m": 0.10000000000002274,
+          "max_duration_delta_s": 0.08999999999997499,
+          "sequential": {
+            "latency_ms": 8966.620968000007,
+            "pacing_ms": 23094.996922999995,
+            "requests": 20,
+            "response_bytes": 38142,
+            "wall_ms": 32061.617891
+          }
+        }
+      ],
+      "complete": true
+    }
+  ],
+  "run_status": "failed",
+  "failure": {
+    "provider": "openrouteservice",
+    "http_status": 403,
+    "message": "Quota exceeded",
+    "places": 40,
+    "trial": 3,
+    "method": "sequential",
+    "note": "The initial runner persisted only complete scenarios. Two completed 40-place trials were not saved, so no 40-place latency is published."
+  },
+  "recorded_at_utc": "2026-10-28T21:35:48Z",
+  "measurement_environment": {
+    "os": "Arch Linux x86_64",
+    "compiler": "GCC 16.2.1",
+    "build_type": "Release",
+    "execution_host": "local workstation, not Render"
+  }
+}

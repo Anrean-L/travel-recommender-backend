@@ -31,3 +31,8 @@ add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
+
+option(BUILD_BENCHMARKS "Build live routing API benchmarks" OFF)
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()

@@ -1,9 +1,75 @@
 # Travel Recommender Backend
 
+![application screenshot](resources/image.png)
+
+[Live Demo](https://travel-recommender-client.vercel.app) · [Frontend repository](https://github.com/Anrean-L/travel-recommender-client)
+
 C++ backend service for recommending nearby places based on user's location, current weather and walking distance.
 
-The project was built as a practical application for a custom task scheduler.  
+Extended a university task-scheduler assignment into a deployed full-stack travel recommendation application.  
 The backend constructs a dependency graph of computations, fetches data from external APIs, scores nearby places and returns a ranked list of recommendations.
+
+## Engineering Highlights
+
+- **Custom DAG task scheduler.** The recommendation pipeline is expressed as typed task dependencies: location feeds weather and places, then scoring, candidate selection, routing, and reranking. Future-like results are resolved lazily, task results are reused, and cycles are detected. The dependency graph does not imply parallel network execution.
+- **Caching of external API responses.** Successful HTTP responses are stored in bounded in-memory LRU caches with TTLs: weather — 10 minutes / 64 entries; places — 2 hours / 64 entries; walking routes — 6 hours / 512 entries; IP geolocation — 12 hours / 32 entries. Keys include the method, path, parameters, and request body. Failed responses are not cached.
+- **Fewer routing requests.** The service scores up to 100 nearby places, selects at most 40 candidates with at most 8 per kind, and fetches walking distances and durations in one openrouteservice matrix request instead of a separate directions request for every candidate. For 40 candidates, this reduces routing HTTP requests from **40 to 1 (97.5% fewer)**. Routing uses OpenStreetMap data through openrouteservice; these are not calls to the OpenStreetMap editing API.
+
+## Routing Benchmark
+
+The live benchmark compares the historical GET-per-place implementation with
+the current production `RoutingClient`. Both use the same production HTTPS
+transport and the same destinations, with the application's HTTP cache disabled.
+The baseline requests `/v2/directions/foot-walking` sequentially; the current
+client sends one POST to `/v2/matrix/foot-walking`.
+
+The matrix is **one-to-many, not all-to-all**: `sources=[0]` and
+`destinations=[1,...,N]`. It returns `1 × N` distances and `1 × N` durations.
+For 40 destinations, that is 40 route pairs / 80 metric values, rather than
+1,681 route pairs from a full `41 × 41` matrix. See the
+[openrouteservice matrix documentation](https://giscience.github.io/openrouteservice/api-reference/endpoints/matrix/).
+
+Measured on **2026-10-29 (Europe/Moscow; 2026-10-28 UTC)** from a local
+Arch Linux x86_64 workstation, GCC 16.2.1, Release build. Times below are
+**medians of three complete trials**, excluding deliberate rate-limit pacing.
+
+| Places | Separate requests | One matrix | HTTP requests | Reduction | Speedup |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 5.073 s | 0.512 s | 10 → 1 | 90% | 9.9× |
+| 20 | 8.978 s | 0.509 s | 20 → 1 | 95% | 17.7× |
+
+[Raw measurements](benchmarks/routing_results.json) · [Place fixture](benchmarks/places_spb.json) · [Benchmark source](benchmarks/routing_benchmark.cpp)
+
+### Reproduce
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON
+cmake --build build --target routing_benchmark -j 2
+set -a
+source .env
+set +a
+./build/benchmarks/routing_benchmark \
+  --fixture benchmarks/places_spb.json \
+  --output /tmp/routing_results.json \
+  --repeats 3 --interval-ms 1600
+```
+
+This performs **210 Directions + 9 Matrix requests** and requires `ORS_API_KEY`.
+The benchmark uses live services and consumes their quota; it is not run by
+`ctest` or built by default. Any HTTP error or incomplete matrix stops the run.
+Completed trials are saved to the output file, including when a later call
+fails. Medians are emitted only for complete scenarios. The report contains no
+API keys. Use `--sizes 10,20` for the two published workloads (90 Directions +
+6 Matrix calls), or `--sizes 40` to rerun only the interrupted workload.
+
+To refresh the place fixture, set `GEOAPIFY_KEY` and run:
+
+```bash
+./build/benchmarks/routing_benchmark --capture /tmp/places_spb.json
+```
+
+Then pass that file with `--fixture`. This makes one live Geoapify request;
+refreshing the fixture changes the workload and results.
 
 ## Features
 
@@ -315,7 +381,6 @@ Weather is fetched from `https://api.openweathermap.org/data/2.5/weather` using
 no One Call subscription is needed. Create a key in your
 [OpenWeather account](https://home.openweathermap.org/api_keys) and set
 `OPENWEATHER_API_KEY` in the backend environment (including on Render).
-Do not put it in frontend `VITE_*` variables.
 
 The response fields used by the frontend are preserved. Temperatures are Celsius,
 wind speed and gusts are converted from m/s to km/h, and rain is mm/h.

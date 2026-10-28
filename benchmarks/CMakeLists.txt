@@ -1,0 +1,2 @@
+add_executable(routing_benchmark routing_benchmark.cpp)
+target_link_libraries(routing_benchmark PRIVATE app_core)
