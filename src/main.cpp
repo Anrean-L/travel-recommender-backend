@@ -20,7 +20,7 @@ int main() {
                                          std::chrono::hours(12));
     app::HttplibHttpClient open_meteo_client("api.open-meteo.com", 64,
                                              std::chrono::minutes(10));
-    app::HttplibHttpClient overpass_client("overpass-api.de", 64,
+    app::HttplibHttpClient geoapify_client("api.geoapify.com", 64,
                                            std::chrono::hours(2));
     app::HttplibHttpClient ors_client("api.openrouteservice.org", 512,
                                       std::chrono::hours(6));
@@ -28,7 +28,7 @@ int main() {
     app::GeolocationClient geolocation_client(two_ip_client,
                                               config->two_ip_api_key);
     app::WeatherClient weather_client(open_meteo_client);
-    app::PlacesClient places_client(overpass_client);
+    app::PlacesClient places_client(geoapify_client, config->geoapify_key);
     app::RoutingClient routing_client(ors_client, config->ors_api_key);
 
     app::RunServer(config->port, weather_client, places_client, routing_client,

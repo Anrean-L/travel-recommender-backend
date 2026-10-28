@@ -10,7 +10,7 @@ The backend constructs a dependency graph of computations, fetches data from ext
 - Location-based recommendations
 - Weather-aware scoring
 - Walking distance and duration calculation
-- OpenStreetMap places search
+- Geoapify Places search by category and radius
 - Route matrix optimization for faster distance requests
 - In-memory HTTP cache
 - Docker-ready deployment
@@ -28,7 +28,7 @@ The backend constructs a dependency graph of computations, fetches data from ext
 External APIs:
 
 - Open-Meteo — current weather
-- Overpass API — nearby places from OpenStreetMap
+- [Geoapify Places API](https://apidocs.geoapify.com/docs/places/) — nearby places based on OpenStreetMap data
 - openrouteservice — walking distances and durations
 - 2IP — fallback IP-based geolocation
 
@@ -192,6 +192,7 @@ The server requires API keys for some external services:
 ```env
 ORS_API_KEY=your_openrouteservice_key
 TWO_IP_API_KEY=your_2ip_key
+GEOAPIFY_KEY=your_geoapify_key
 ```
 
 Optional:
@@ -200,7 +201,13 @@ Optional:
 PORT=8080
 ```
 
-If `PORT` is not set, the server uses the default port.
+If `PORT` is not set, the server uses port `8080`.
+
+`GEOAPIFY_KEY` is required for nearby places search. Create a key in
+[Geoapify MyProjects](https://myprojects.geoapify.com/). The key is sent to
+`api.geoapify.com`; it is not included in responses or request logs.
+`ORS_API_KEY` is used for walking routes, and `TWO_IP_API_KEY` for IP geolocation.
+All three keys are required at startup, including when coordinates are provided.
 
 ## Running Locally
 
@@ -213,8 +220,22 @@ cmake --build build --config Release
 
 ### Run
 
+You can store the variables above in a local `.env` file (excluded from Git).
+On Linux/macOS, restrict file access and load it before starting the server:
+
 ```bash
-ORS_API_KEY=your_key TWO_IP_API_KEY=your_key ./build/src/app
+chmod 600 .env
+set -a
+source .env
+set +a
+./build/src/app
+```
+
+The application reads process environment variables; it does not load `.env`
+automatically. Alternatively, provide the variables directly:
+
+```bash
+ORS_API_KEY=your_ors_key TWO_IP_API_KEY=your_2ip_key GEOAPIFY_KEY=your_geoapify_key ./build/src/app
 ```
 
 On Windows PowerShell:
@@ -222,6 +243,7 @@ On Windows PowerShell:
 ```powershell
 $env:ORS_API_KEY="your_key"
 $env:TWO_IP_API_KEY="your_key"
+$env:GEOAPIFY_KEY="your_geoapify_key"
 .\build\src\app.exe
 ```
 
@@ -247,13 +269,14 @@ docker run --rm \
   -e PORT=8080 \
   -e ORS_API_KEY=your_key \
   -e TWO_IP_API_KEY=your_key \
+  -e GEOAPIFY_KEY=your_geoapify_key \
   travel-recommender-backend
 ```
 
 PowerShell:
 
 ```powershell
-docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWO_IP_API_KEY="your_key" travel-recommender-backend
+docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWO_IP_API_KEY="your_key" -e GEOAPIFY_KEY="your_geoapify_key" travel-recommender-backend
 ```
 
 ## Deployment
@@ -281,11 +304,26 @@ It takes into account:
 - walking duration;
 - diversity of place categories.
 
+Nearby places are fetched from `https://api.geoapify.com/v2/places` using a
+`circle:longitude,latitude,radius` filter and proximity sorting. A single request
+retrieves up to 100 candidates across supported categories: museums, galleries,
+viewpoints, cafes, restaurants, fast food, bars, pubs, nightclubs, parks, gardens,
+bakeries, historic sights, theatres, and cinemas. This bounded candidate list is
+not an exhaustive listing of all places within the radius.
+
+Geoapify categories and source tags are mapped to the application's place kinds.
+Unnamed places, unsupported kinds, invalid coordinates, and duplicate places
+are skipped. The existing response shape is preserved: `osm_type` and `osm_id`
+come from Geoapify's source metadata when available; otherwise they remain
+empty and `0`. Address, website, and opening hours are included when supplied.
+
 The backend first selects a diverse set of candidates, then requests walking route information only for those candidates.
 This avoids unnecessary routing API calls and makes the service significantly faster.
 
 ## Notes
 
-- Place data comes from OpenStreetMap, so some fields such as address, website or opening hours may be missing.
+- Place data is provided by Geoapify based on OpenStreetMap. Some fields such as address, website or opening hours may be missing.
+- Display attribution to Geoapify and OpenStreetMap contributors when showing place data; follow the provider's [attribution requirements](https://www.geoapify.com/attribution/).
+- Geoapify's free plan uses a daily credit allowance. Places requests cost credits according to the number of returned results; see [current pricing](https://apidocs.geoapify.com/docs/places/#pricing). Successful places responses are cached in memory for two hours.
 - If device coordinates are not provided, IP-based geolocation can be inaccurate, especially when using a VPN.
 - External APIs may rate-limit requests, so the backend uses HTTP caching where possible.

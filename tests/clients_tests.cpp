@@ -151,90 +151,79 @@ TEST(WeatherClient, FetchWeatherReturnsParseErrorForMalformedJson) {
               std::string::npos);
 }
 
-TEST(PlacesClient, FetchPlacesBuildsOverpassQueryAndParsesPlaceDetails) {
+TEST(PlacesClient, FetchPlacesBuildsGeoapifyRequestAndParsesDetails) {
     FakeHttpClient http_client;
-    http_client.post_response = {200,
-                                 R"({
-            "elements": [
-                {
-                    "type": "node",
-                    "id": 101,
-                    "lat": 59.9387,
-                    "lon": 30.3142,
-                    "tags": {
-                        "name": "Cinema Mirage",
-                        "amenity": "cinema",
-                        "addr:street": "Nevsky Prospect",
-                        "addr:housenumber": "24",
-                        "website": "https://cinema.example",
-                        "opening_hours": "Mo-Su 10:00-23:00"
-                    }
-                }
-            ]
-        })"};
-
-    app::PlacesClient client(http_client);
+    http_client.get_response = {200, R"({"features":[{
+        "properties":{
+            "name":"Cinema Mirage", "lat":59.9387, "lon":30.3142,
+            "categories":["entertainment.cinema"], "place_id":"cinema-1",
+            "address_line2":"Nevsky Prospect, 24", "website":"https://cinema.example",
+            "opening_hours":"Mo-Su 10:00-23:00",
+            "datasource":{"raw":{"osm_type":"n","osm_id":101}}
+        }}]})"};
+    app::PlacesClient client(http_client, "places-key");
     const auto result = client.FetchPlaces({59.9386, 30.3141}, 750);
-
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(http_client.last_post_path, "/api/interpreter");
-    ASSERT_NE(FindParam(http_client.last_post_params, "data"), nullptr);
-    const std::string& query =
-        FindParam(http_client.last_post_params, "data")->value;
-    EXPECT_NE(query.find("around:750,59.938600,30.314100"), std::string::npos);
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_EQ(http_client.last_get_path, "/v2/places");
+    for (const auto* key :
+         {"apiKey", "filter", "bias", "categories", "limit"}) {
+        ASSERT_NE(FindParam(http_client.last_get_params, key), nullptr);
+    }
+    EXPECT_EQ(FindParam(http_client.last_get_params, "apiKey")->value,
+              "places-key");
+    EXPECT_EQ(FindParam(http_client.last_get_params, "filter")->value,
+              "circle:30.314100,59.938600,750");
+    EXPECT_EQ(FindParam(http_client.last_get_params, "bias")->value,
+              "proximity:30.314100,59.938600");
+    EXPECT_EQ(FindParam(http_client.last_get_params, "limit")->value, "100");
     ASSERT_EQ(result->size(), 1U);
     EXPECT_EQ(result->front().name, "Cinema Mirage");
     EXPECT_EQ(result->front().kind, app::PlaceKind::kCinema);
     EXPECT_EQ(result->front().environment, app::PlaceEnvironment::kIndoor);
+    EXPECT_EQ(result->front().osm_type, "node");
+    EXPECT_EQ(result->front().osm_id, 101U);
+    EXPECT_DOUBLE_EQ(result->front().coords.lat, 59.9387);
     EXPECT_EQ(result->front().address, "Nevsky Prospect, 24");
     EXPECT_EQ(result->front().website, "https://cinema.example");
     EXPECT_EQ(result->front().opening_hours, "Mo-Su 10:00-23:00");
 }
 
-TEST(PlacesClient, FetchPlacesSkipsDuplicatesAndUnnamedEntries) {
+TEST(PlacesClient, SkipsDuplicatesUnnamedAndInvalidCoordinates) {
     FakeHttpClient http_client;
-    http_client.post_response = {200,
-                                 R"({
-            "elements": [
-                {
-                    "type": "node",
-                    "id": 42,
-                    "lat": 59.9387,
-                    "lon": 30.3142,
-                    "tags": {
-                        "name": "Summer Garden",
-                        "leisure": "garden"
-                    }
-                },
-                {
-                    "type": "node",
-                    "id": 42,
-                    "lat": 59.9387,
-                    "lon": 30.3142,
-                    "tags": {
-                        "name": "Summer Garden",
-                        "leisure": "garden"
-                    }
-                },
-                {
-                    "type": "node",
-                    "id": 43,
-                    "lat": 59.9388,
-                    "lon": 30.3143,
-                    "tags": {
-                        "leisure": "park"
-                    }
-                }
-            ]
-        })"};
-
-    app::PlacesClient client(http_client);
-    const auto result = client.FetchPlaces({59.9386, 30.3141}, 500);
-
+    http_client.get_response = {200, R"({"features":[
+        {"properties":{"name":"Garden","place_id":"garden","categories":["leisure.park","leisure.park.garden"]},
+         "geometry":{"type":"Point","coordinates":[30.3142,59.9387]}},
+        {"properties":{"name":"Duplicate","place_id":"garden","categories":["leisure.park.garden"],"lat":59.9387,"lon":30.3142}},
+        {"properties":{"place_id":"unnamed","categories":["leisure.park"],"lat":59.9,"lon":30.3}},
+        {"properties":{"name":"Invalid","categories":["leisure.park"],"lat":91,"lon":30}},
+        {"properties":{"name":"Unknown","categories":["unknown"],"lat":59,"lon":30}}
+    ]})"};
+    app::PlacesClient client(http_client, "places-key");
+    auto result = client.FetchPlaces({59.9386, 30.3141}, 500);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->size(), 1U);
-    EXPECT_EQ(result->front().name, "Summer Garden");
     EXPECT_EQ(result->front().kind, app::PlaceKind::kGarden);
+    EXPECT_EQ(result->front().environment, app::PlaceEnvironment::kOutdoor);
+}
+
+TEST(PlacesClient, ReportsUpstreamErrorWithoutExposingKey) {
+    FakeHttpClient http_client;
+    http_client.get_response = {401, "secret-key"};
+    app::PlacesClient client(http_client, "secret-key");
+    auto result = client.FetchPlaces({59.9, 30.3}, 500);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), "Geoapify Places API returned status 401");
+}
+
+TEST(PlacesClient, RejectsMalformedResponseAndAcceptsEmptyResults) {
+    FakeHttpClient http_client;
+    app::PlacesClient client(http_client, "places-key");
+    http_client.get_response = {200, R"({"features":42})"};
+    EXPECT_FALSE(client.FetchPlaces({59.9, 30.3}, 500).has_value());
+    http_client.get_response = {200, R"({"features":[]})"};
+    auto result = client.FetchPlaces({59.9, 30.3}, 500);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->empty());
 }
 
 TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
@@ -271,7 +260,8 @@ TEST(RoutingClient, AddRoutesUsesApiResponseAndStoresRouteMetrics) {
 
 TEST(RoutingClient, AddRoutesFallsBackToStraightDistanceWhenRouteFails) {
     FakeHttpClient http_client;
-    http_client.post_json_response = {200, R"({"distances":[],"durations":[]})"};
+    http_client.post_json_response = {200,
+                                      R"({"distances":[],"durations":[]})"};
 
     app::RoutingClient client(http_client, "ors-key");
     const app::Coordinates origin{59.9386, 30.3141};

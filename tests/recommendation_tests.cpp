@@ -15,16 +15,17 @@ TEST(Recommendation, BuildRecommendationsSkipsGeolocationWhenCoordsProvided) {
     http_client.geolocation_response =
         test_support::MakeGeolocationResponse(10.0, 20.0);
     http_client.weather_response = test_support::MakeWeatherResponse(0.0, true);
-    http_client.routing_response = test_support::MakeRouteResponse(480.0, 360.0);
-    http_client.places_response = test_support::MakePlacesResponse(
-        test_support::json::array({test_support::MakePlaceElement(
-                                       1, "Cafe One", "cafe", 59.9390, 30.3150),
-                                   test_support::MakePlaceElement(
-                                       2, "Museum One", "restaurant", 59.9400,
-                                       30.3160)}));
+    http_client.routing_response = {
+        200, R"({"distances":[[480.0,480.0]],"durations":[[360.0,360.0]]})"};
+    http_client.places_response =
+        test_support::MakePlacesResponse(test_support::json::array(
+            {test_support::MakePlaceElement(1, "Cafe One", "cafe", 59.9390,
+                                            30.3150),
+             test_support::MakePlaceElement(2, "Museum One", "restaurant",
+                                            59.9400, 30.3160)}));
 
     app::WeatherClient weather_client(http_client);
-    app::PlacesClient places_client(http_client);
+    app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
 
@@ -56,9 +57,10 @@ TEST(Recommendation, BuildRecommendationsUsesGeolocationAndDiversifiesKinds) {
         test_support::MakeGeolocationResponse(59.9386, 30.3141);
     http_client.weather_response =
         test_support::MakeWeatherResponse(5.0, false);
-    http_client.routing_response = test_support::MakeRouteResponse(300.0, 240.0);
-    http_client.places_response = test_support::MakePlacesResponse(
-        test_support::json::array(
+    http_client.routing_response =
+        test_support::MakeRouteResponse(300.0, 240.0);
+    http_client.places_response =
+        test_support::MakePlacesResponse(test_support::json::array(
             {test_support::MakePlaceElement(1, "Restaurant 1", "restaurant",
                                             59.9387, 30.3142),
              test_support::MakePlaceElement(2, "Restaurant 2", "restaurant",
@@ -75,7 +77,7 @@ TEST(Recommendation, BuildRecommendationsUsesGeolocationAndDiversifiesKinds) {
                                             30.3148)}));
 
     app::WeatherClient weather_client(http_client);
-    app::PlacesClient places_client(http_client);
+    app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
 
@@ -101,7 +103,8 @@ TEST(Recommendation, BuildRecommendationsUsesGeolocationAndDiversifiesKinds) {
               3);
     EXPECT_EQ(std::count_if(result->places.begin(), result->places.end(),
                             [](const app::ScoredPlace& place) {
-                                return place.place.kind == app::PlaceKind::kCafe;
+                                return place.place.kind ==
+                                       app::PlaceKind::kCafe;
                             }),
               1);
 }
@@ -111,12 +114,13 @@ TEST(Recommendation, BuildRecommendationsReturnsClientFailureMessage) {
     http_client.geolocation_response =
         test_support::MakeGeolocationResponse(59.9386, 30.3141);
     http_client.weather_response = {200, R"({"current":42})"};
-    http_client.routing_response = test_support::MakeRouteResponse(300.0, 240.0);
+    http_client.routing_response =
+        test_support::MakeRouteResponse(300.0, 240.0);
     http_client.places_response =
         test_support::MakePlacesResponse(test_support::json::array());
 
     app::WeatherClient weather_client(http_client);
-    app::PlacesClient places_client(http_client);
+    app::PlacesClient places_client(http_client, "places-key");
     app::RoutingClient routing_client(http_client, "ors-key");
     app::GeolocationClient geolocation_client(http_client, "geo-key");
 

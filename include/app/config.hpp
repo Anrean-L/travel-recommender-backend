@@ -17,6 +17,7 @@ struct Config {
     std::string two_ip_api_key;
     std::string ors_api_key;
     int port;
+    std::string geoapify_key;
 };
 
 std::expected<Config, std::string> LoadConfig();

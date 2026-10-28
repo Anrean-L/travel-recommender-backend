@@ -1,6 +1,8 @@
 #include "api/places_client.hpp"
 
+#include <cmath>
 #include <cstdint>
+#include <unordered_set>
 
 #include "api/http_client.hpp"
 #include "app/config.hpp"
@@ -13,19 +15,23 @@ using json = nlohmann::json;
 
 namespace {
 
-struct OsmTag {
-    std::string key;
-    std::string value;
-};
-
-std::vector<OsmTag> tags = {
-    {"tourism", "museum"},     {"tourism", "gallery"},
-    {"tourism", "viewpoint"},  {"amenity", "cafe"},
-    {"amenity", "restaurant"}, {"amenity", "fast_food"},
-    {"amenity", "bar"},        {"amenity", "pub"},
-    {"amenity", "nightclub"},  {"leisure", "park"},
-    {"leisure", "garden"},     {"shop", "bakery"},
-    {"historic", "monument"},  {"historic", "memorial"},
+// More specific categories precede their parents (garden before park).
+const std::vector<std::pair<std::string, PlaceKind>> kCategories = {
+    {"entertainment.museum", PlaceKind::kMuseum},
+    {"entertainment.culture.gallery", PlaceKind::kGallery},
+    {"tourism.attraction.viewpoint", PlaceKind::kViewpoint},
+    {"catering.cafe", PlaceKind::kCafe},
+    {"catering.restaurant", PlaceKind::kRestaurant},
+    {"catering.fast_food", PlaceKind::kFastFood},
+    {"catering.bar", PlaceKind::kBar},
+    {"catering.pub", PlaceKind::kPub},
+    {"adult.nightclub", PlaceKind::kNightclub},
+    {"leisure.park.garden", PlaceKind::kGarden},
+    {"leisure.park", PlaceKind::kPark},
+    {"commercial.food_and_drink.bakery", PlaceKind::kBakery},
+    {"tourism.sights", PlaceKind::kHistoric},
+    {"entertainment.culture.theatre", PlaceKind::kTheatre},
+    {"entertainment.cinema", PlaceKind::kCinema},
 };
 
 std::string GetString(const json& object, const std::string& key) {
@@ -33,25 +39,6 @@ std::string GetString(const json& object, const std::string& key) {
         return "";
     }
     return object.at(key).get<std::string>();
-}
-
-bool TryReadCoordinates(const json& element, Coordinates& coords) {
-    if (element.contains("lat") && element.contains("lon")) {
-        coords.lat = element.at("lat").get<double>();
-        coords.lon = element.at("lon").get<double>();
-        return true;
-    }
-
-    if (element.contains("center") && element.at("center").is_object()) {
-        const json& center = element.at("center");
-        if (center.contains("lat") && center.contains("lon")) {
-            coords.lat = center.at("lat").get<double>();
-            coords.lon = center.at("lon").get<double>();
-            return true;
-        }
-    }
-
-    return false;
 }
 
 PlaceKind ParsePlaceKind(const json& tags) {
@@ -176,41 +163,28 @@ std::string GetWebsite(const json& tags) {
     return "";
 }
 
-bool AlreadyAdded(const std::vector<Place>& places, const std::string& osm_type,
-                  uint64_t osm_id) {
-    for (const Place& place : places) {
-        if (place.osm_type == osm_type && place.osm_id == osm_id) {
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
-
-std::string PlacesClient::BuildQuery(const Coordinates& coords, int radius_m) {
-    std::string lat = std::to_string(coords.lat);
-    std::string lon = std::to_string(coords.lon);
-    std::string radius = std::to_string(radius_m);
-    std::string query = "[out:json][timeout:25];\n(\n";
-    for (const auto& tag : tags) {
-        query += "  node[\"" + tag.key + "\"=\"" + tag.value +
-                 "\"](around:" + radius + "," + lat + "," + lon + ");\n";
-        query += "  way[\"" + tag.key + "\"=\"" + tag.value +
-                 "\"](around:" + radius + "," + lat + "," + lon + ");\n";
-        query += "  relation[\"" + tag.key + "\"=\"" + tag.value +
-                 "\"](around:" + radius + "," + lat + "," + lon + ");\n";
-    }
-    query += ");\nout center tags;";
-    return query;
-}
 
 std::expected<std::vector<Place>, std::string> PlacesClient::FetchPlaces(
     const Coordinates& coords, int radius_m) {
-    std::string query = BuildQuery(coords, radius_m);
-    HttpResponse response = client_.Post("/api/interpreter", {{"data", query}});
+    std::string categories;
+    for (const auto& [category, kind] : kCategories) {
+        if (!categories.empty()) categories += ",";
+        categories += category;
+    }
+    const std::string origin =
+        std::to_string(coords.lon) + "," + std::to_string(coords.lat);
+    HttpResponse response = client_.Get(
+        "/v2/places",
+        {
+            {"apiKey", api_key_},
+            {"categories", categories},
+            {"filter", "circle:" + origin + "," + std::to_string(radius_m)},
+            {"bias", "proximity:" + origin},
+            {"limit", "100"},
+        });
     if (IsErrorCode(response.status)) {
-        return std::unexpected("Received an error status from API: " +
+        return std::unexpected("Geoapify Places API returned status " +
                                std::to_string(response.status));
     }
     return ParsePlaces(response.body);
@@ -221,61 +195,96 @@ std::expected<std::vector<Place>, std::string> PlacesClient::ParsePlaces(
     try {
         json data = json::parse(body);
 
-        const json& elements = data.at("elements");
-        if (!elements.is_array()) {
+        const json& features = data.at("features");
+        if (!features.is_array()) {
             return std::unexpected(
-                "Overpass response field 'elements' is not array");
+                "Geoapify response field 'features' is not array");
         }
-
         std::vector<Place> places;
-
-        for (const json& element : elements) {
-            if (!element.is_object()) {
+        std::unordered_set<std::string> seen;
+        for (const auto& feature : features) {
+            if (!feature.is_object() || !feature.contains("properties") ||
+                !feature.at("properties").is_object())
                 continue;
+            const auto& props = feature.at("properties");
+            const json empty = json::object();
+            const auto& source = props.contains("datasource") &&
+                                         props.at("datasource").is_object()
+                                     ? props.at("datasource")
+                                     : empty;
+            const auto& raw =
+                source.contains("raw") && source.at("raw").is_object()
+                    ? source.at("raw")
+                    : empty;
+            Place place{};
+            place.name = GetString(props, "name");
+            if (place.name.empty()) place.name = GetString(props, "brand");
+            if (place.name.empty()) continue;
+            if (props.contains("lat") && props.at("lat").is_number() &&
+                props.contains("lon") && props.at("lon").is_number()) {
+                place.coords = {props.at("lat").get<double>(),
+                                props.at("lon").get<double>()};
+            } else {
+                if (!feature.contains("geometry") ||
+                    !feature.at("geometry").is_object())
+                    continue;
+                const auto& geom = feature.at("geometry");
+                if (GetString(geom, "type") != "Point" ||
+                    !geom.contains("coordinates"))
+                    continue;
+                const auto& coords = geom.at("coordinates");
+                if (!coords.is_array() || coords.size() < 2 ||
+                    !coords[0].is_number() || !coords[1].is_number())
+                    continue;
+                place.coords = {coords[1].get<double>(),
+                                coords[0].get<double>()};
             }
-
-            if (!element.contains("tags") || !element.at("tags").is_object()) {
+            if (!std::isfinite(place.coords.lat) ||
+                !std::isfinite(place.coords.lon) ||
+                std::abs(place.coords.lat) > 90 ||
+                std::abs(place.coords.lon) > 180)
                 continue;
+            place.kind = ParsePlaceKind(raw);
+            if (place.kind == PlaceKind::kUnknown &&
+                props.contains("categories") &&
+                props.at("categories").is_array()) {
+                for (const auto& [category, kind] : kCategories) {
+                    for (const auto& value : props.at("categories")) {
+                        if (!value.is_string()) continue;
+                        const auto text = value.get<std::string>();
+                        if (text == category ||
+                            text.starts_with(category + ".")) {
+                            place.kind = kind;
+                            break;
+                        }
+                    }
+                    if (place.kind != PlaceKind::kUnknown) break;
+                }
             }
-
-            const json& tags = element.at("tags");
-
-            std::string name = GetString(tags, "name");
-            if (name.empty()) {
-                name = GetString(tags, "brand");
+            if (place.kind == PlaceKind::kUnknown) continue;
+            place.environment = GetEnvironment(place.kind);
+            place.osm_type = GetString(raw, "osm_type");
+            if (place.osm_type == "n") place.osm_type = "node";
+            if (place.osm_type == "w") place.osm_type = "way";
+            if (place.osm_type == "r") place.osm_type = "relation";
+            if (raw.contains("osm_id") &&
+                raw.at("osm_id").is_number_unsigned()) {
+                place.osm_id = raw.at("osm_id").get<uint64_t>();
             }
-            if (name.empty()) {
-                continue;
+            std::string identity = GetString(props, "place_id");
+            if (place.osm_id != 0 && !place.osm_type.empty()) {
+                identity = place.osm_type + ":" + std::to_string(place.osm_id);
             }
-
-            Coordinates coords;
-            if (!TryReadCoordinates(element, coords)) {
-                continue;
-            }
-
-            PlaceKind kind = ParsePlaceKind(tags);
-            if (kind == PlaceKind::kUnknown) {
-                continue;
-            }
-
-            std::string osm_type = GetString(element, "type");
-            uint64_t osm_id = element.at("id").get<uint64_t>();
-
-            if (AlreadyAdded(places, osm_type, osm_id)) {
-                continue;
-            }
-
-            Place place;
-            place.name = std::move(name);
-            place.kind = kind;
-            place.environment = GetEnvironment(kind);
-            place.coords = coords;
-            place.osm_type = std::move(osm_type);
-            place.osm_id = osm_id;
-            place.address = BuildAddress(tags);
-            place.website = GetWebsite(tags);
-            place.opening_hours = GetString(tags, "opening_hours");
-
+            if (!identity.empty() && !seen.insert(identity).second) continue;
+            place.address = GetString(props, "address_line2");
+            if (place.address.empty())
+                place.address = GetString(props, "formatted");
+            if (place.address.empty()) place.address = BuildAddress(raw);
+            place.website = GetWebsite(props);
+            if (place.website.empty()) place.website = GetWebsite(raw);
+            place.opening_hours = GetString(props, "opening_hours");
+            if (place.opening_hours.empty())
+                place.opening_hours = GetString(raw, "opening_hours");
             places.push_back(std::move(place));
         }
 

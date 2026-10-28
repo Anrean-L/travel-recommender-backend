@@ -19,15 +19,19 @@ std::expected<Config, std::string> LoadConfig() {
     auto ip2_api_key = GetEnv("TWO_IP_API_KEY");
     auto ors_api_key = GetEnv("ORS_API_KEY");
     auto port = GetEnv("PORT");
+    auto geoapify_key = GetEnv("GEOAPIFY_KEY");
     if (!ip2_api_key) {
         return std::unexpected(ip2_api_key.error());
     }
     if (!ors_api_key) {
         return std::unexpected(ors_api_key.error());
     }
-    int parsed_port;
+    if (!geoapify_key) {
+        return std::unexpected(geoapify_key.error());
+    }
+    int parsed_port = 8080;
     try {
-        parsed_port = std::stoi(*port);
+        if (port) parsed_port = std::stoi(*port);
     } catch (...) {
         parsed_port = 8080;
     }
@@ -35,6 +39,7 @@ std::expected<Config, std::string> LoadConfig() {
         *ip2_api_key,
         *ors_api_key,
         parsed_port,
+        *geoapify_key,
     };
 }
 

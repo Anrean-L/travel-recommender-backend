@@ -62,6 +62,11 @@ class ScenarioHttpClient final : public app::IHttpClient {
             return weather_response;
         }
 
+        if (path == "/v2/places") {
+            ++places_calls;
+            return places_response;
+        }
+
         ++geolocation_calls;
         return geolocation_response;
     }
@@ -138,24 +143,30 @@ inline app::HttpResponse MakeWeatherResponse(
 
 inline app::HttpResponse MakeRouteResponse(double distance_m,
                                            double duration_sec) {
-    return {200,
-            json{{"distances", json::array({json::array({distance_m})})},
-                 {"durations", json::array({json::array({duration_sec})})}}
-                .dump()};
+    return {200, json{{"distances", json::array({json::array({distance_m})})},
+                      {"durations", json::array({json::array({duration_sec})})}}
+                     .dump()};
 }
 
 inline app::HttpResponse MakePlacesResponse(const json& elements) {
-    return {200, json{{"elements", elements}}.dump()};
+    return {200,
+            json{{"type", "FeatureCollection"}, {"features", elements}}.dump()};
 }
 
 inline json MakePlaceElement(std::uint64_t id, std::string name,
                              std::string amenity, double lat, double lon) {
-    return json{
-        {"type", "node"},
-        {"id", id},
-        {"lat", lat},
-        {"lon", lon},
-        {"tags", {{"name", std::move(name)}, {"amenity", std::move(amenity)}}}};
+    return json{{"type", "Feature"},
+                {"properties",
+                 {{"place_id", std::to_string(id)},
+                  {"name", std::move(name)},
+                  {"lat", lat},
+                  {"lon", lon},
+                  {"categories", json::array({"catering." + amenity})},
+                  {"datasource",
+                   {{"raw",
+                     {{"osm_type", "n"},
+                      {"osm_id", id},
+                      {"amenity", std::move(amenity)}}}}}}}};
 }
 
 }  // namespace test_support
