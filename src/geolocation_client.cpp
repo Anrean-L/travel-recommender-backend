@@ -1,7 +1,9 @@
 #include "api/geolocation_client.hpp"
 
+#include <cmath>
 #include <expected>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 #include "api/http_client.hpp"
 #include "app/config.hpp"
@@ -20,9 +22,20 @@ std::expected<Coordinates, std::string> GeolocationClient::FetchCoordinates(
     }
     try {
         json data = json::parse(response.body);
-        Coordinates coords{.lat = std::stod(data.at("lat").get<std::string>()),
-                           .lon = std::stod(data.at("lon").get<std::string>())};
-        if (coords.lat < -90.0 || coords.lat > 90.0 || coords.lon < -180.0 ||
+        const auto read_coordinate = [](const json& value) {
+            if (value.is_number()) return value.get<double>();
+            const auto text = value.get<std::string>();
+            std::size_t parsed = 0;
+            const double coordinate = std::stod(text, &parsed);
+            if (parsed != text.size()) {
+                throw std::invalid_argument("Invalid coordinate string");
+            }
+            return coordinate;
+        };
+        Coordinates coords{.lat = read_coordinate(data.at("lat")),
+                           .lon = read_coordinate(data.at("lon"))};
+        if (!std::isfinite(coords.lat) || !std::isfinite(coords.lon) ||
+            coords.lat < -90.0 || coords.lat > 90.0 || coords.lon < -180.0 ||
             coords.lon > 180.0) {
             return std::unexpected("Invalid coordinates are received");
         }

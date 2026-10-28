@@ -91,6 +91,33 @@ TEST(GeolocationClient, FetchCoordinatesBuildsRequestAndParsesResponse) {
     EXPECT_DOUBLE_EQ(result->lon, 30.3141);
 }
 
+TEST(GeolocationClient, FetchCoordinatesAcceptsNumericAndMixedFormats) {
+    FakeHttpClient http_client;
+    app::GeolocationClient client(http_client, "secret-token");
+    for (const auto* body : {R"({"lat":59.9386,"lon":30.3141})",
+                             R"({"lat":"59.9386","lon":30.3141})",
+                             R"({"lat":59.9386,"lon":"30.3141"})"}) {
+        http_client.get_response = {200, body};
+        const auto result = client.FetchCoordinates("8.8.8.8");
+        ASSERT_TRUE(result.has_value()) << result.error();
+        EXPECT_DOUBLE_EQ(result->lat, 59.9386);
+        EXPECT_DOUBLE_EQ(result->lon, 30.3141);
+    }
+}
+
+TEST(GeolocationClient, FetchCoordinatesRejectsMalformedAndNonFiniteValues) {
+    FakeHttpClient http_client;
+    app::GeolocationClient client(http_client, "secret-token");
+    for (const auto* body : {R"({"lat":"nan","lon":30})",
+                             R"({"lat":59,"lon":"inf"})",
+                             R"({"lat":"59junk","lon":30})",
+                             R"({"lat":null,"lon":30})",
+                             R"({"lat":91,"lon":30})"}) {
+        http_client.get_response = {200, body};
+        EXPECT_FALSE(client.FetchCoordinates("8.8.8.8").has_value());
+    }
+}
+
 TEST(GeolocationClient, FetchCoordinatesRejectsCoordinatesOutsideWorldBounds) {
     FakeHttpClient http_client;
     http_client.get_response = {200, R"({"lat":"91.0","lon":"30.3141"})"};
