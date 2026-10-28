@@ -214,14 +214,14 @@ cmake --build build --config Release
 ### Run
 
 ```bash
-ORS_API_KEY=your_key TWOIP_API_KEY=your_key ./build/src/app
+ORS_API_KEY=your_key TWO_IP_API_KEY=your_key ./build/src/app
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:ORS_API_KEY="your_key"
-$env:TWOIP_API_KEY="your_key"
+$env:TWO_IP_API_KEY="your_key"
 .\build\src\app.exe
 ```
 
@@ -246,14 +246,14 @@ docker run --rm \
   -p 8080:8080 \
   -e PORT=8080 \
   -e ORS_API_KEY=your_key \
-  -e TWOIP_API_KEY=your_key \
+  -e TWO_IP_API_KEY=your_key \
   travel-recommender-backend
 ```
 
 PowerShell:
 
 ```powershell
-docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWOIP_API_KEY="your_key" travel-recommender-backend
+docker run --rm -p 8080:8080 -e PORT=8080 -e ORS_API_KEY="your_key" -e TWO_IP_API_KEY="your_key" travel-recommender-backend
 ```
 
 ## Deployment
